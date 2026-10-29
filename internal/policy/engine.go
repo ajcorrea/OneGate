@@ -107,7 +107,7 @@ func Compile(p *Policy) (*Engine, error) {
 	if tz == "" {
 		tz = DefaultTimezone
 	}
-	loc, err := time.LoadLocation(tz)
+	loc, err := loadLocation(tz)
 	if err != nil {
 		add("customer.timezone inválido %q", tz)
 		loc = time.UTC
@@ -480,6 +480,13 @@ func (w compiledWindow) contains(t time.Time) bool {
 		prev = 7
 	}
 	return (w.days[d] && m >= w.start) || (w.days[prev] && m < w.end)
+}
+
+func loadLocation(tz string) (*time.Location, error) {
+	if tz == "" || tz == "Local" {
+		return nil, errors.New("fuso vazio")
+	}
+	return time.LoadLocation(tz)
 }
 
 // Version devolve a versão da política.

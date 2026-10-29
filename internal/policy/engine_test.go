@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"net/netip"
 	"strings"
 	"testing"
@@ -368,5 +370,35 @@ func TestMaskSecrets(t *testing.T) {
 		if got := MaskSecrets(in); got != want {
 			t.Errorf("MaskSecrets(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestSignedPackage(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := Sign(samplePolicy(t), priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := Verify(b, pub)
+	if err != nil || p.Customer.Code != "NSF" {
+		t.Fatalf("verificação: %v", err)
+	}
+	if _, err := Compile(p); err != nil {
+		t.Fatal(err)
+	}
+	// Adulterar um byte do documento invalida a assinatura.
+	tampered := bytes.Replace(b, []byte(`\"priv_level\":5`), []byte(`\"priv_level\":15`), 1)
+	if bytes.Equal(tampered, b) {
+		tampered = bytes.Replace(b, []byte("NSF"), []byte("XSF"), 1)
+	}
+	if _, err := Verify(tampered, pub); err == nil {
+		t.Fatal("pacote adulterado foi aceito")
+	}
+	other, _, _ := ed25519.GenerateKey(nil)
+	if _, err := Verify(b, other); err == nil || !strings.Contains(err.Error(), "outra chave") {
+		t.Fatalf("chave errada: %v", err)
 	}
 }

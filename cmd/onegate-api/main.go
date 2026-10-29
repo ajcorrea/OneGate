@@ -14,11 +14,15 @@
 //	onegate-api                       inicia a API (aplica as migrações)
 //	onegate-api migrate               só aplica as migrações
 //	onegate-api bootstrap-admin --login alexandre --name "Nome" [--email contato@exemplo.com]
+//	onegate-api policy-pubkey         mostra a chave pública que os Edges usam para verificar a política
+//	onegate-api export-policy --customer NSF --out politica.json   gera o pacote assinado do cliente
 package main
 
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -34,6 +38,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/ajcorrea/onegate/internal/platform"
+	"github.com/ajcorrea/onegate/internal/policy"
 	"github.com/ajcorrea/onegate/internal/secretbox"
 )
 
@@ -53,10 +58,14 @@ func main() {
 		err = migrate()
 	case "bootstrap-admin":
 		err = bootstrapAdmin(args)
+	case "policy-pubkey":
+		err = policyPubkey()
+	case "export-policy":
+		err = exportPolicy(args)
 	case "version":
 		fmt.Println("onegate-api", version)
 	default:
-		fmt.Fprintln(os.Stderr, "uso: onegate-api [serve | migrate | bootstrap-admin --login L --name N [--email E] | version]")
+		fmt.Fprintln(os.Stderr, "uso: onegate-api [serve | migrate | bootstrap-admin --login L --name N [--email E] | policy-pubkey | export-policy --customer COD --out ARQ | version]")
 		os.Exit(2)
 	}
 	if err != nil {
@@ -196,4 +205,50 @@ func readPassword(prompt string) (string, error) {
 		return "", err
 	}
 	return strings.TrimRight(line, "\r\n"), nil
+}
+
+func policyPubkey() error {
+	priv, err := platform.PolicySigningKey(os.Getenv("ONEGATE_SECRET_KEY"))
+	if err != nil {
+		return fmt.Errorf("ONEGATE_SECRET_KEY: %w", err)
+	}
+	pub := priv.Public().(ed25519.PublicKey)
+	fmt.Println(base64.StdEncoding.EncodeToString(pub))
+	fmt.Fprintln(os.Stderr, "key_id", policy.KeyID(pub), "— use em: onegate-edge serve --pubkey <chave>")
+	return nil
+}
+
+// exportPolicy gera o pacote assinado de um cliente (regras publicadas + técnicos e equipamentos
+// atuais). Contém segredos: grave com permissão restrita e leve ao Edge por canal seguro.
+func exportPolicy(args []string) error {
+	fs := flag.NewFlagSet("export-policy", flag.ExitOnError)
+	customer := fs.String("customer", "", "código do cliente (ex.: NSF)")
+	out := fs.String("out", "", "arquivo de saída")
+	_ = fs.Parse(args)
+	if *customer == "" || *out == "" {
+		return errors.New("informe --customer e --out")
+	}
+	ctx := context.Background()
+	db, box, err := open(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	priv, err := platform.PolicySigningKey(os.Getenv("ONEGATE_SECRET_KEY"))
+	if err != nil {
+		return err
+	}
+	srv := platform.NewServer(db, box, slog.Default())
+	data, warnings, err := srv.ExportPolicy(ctx, *customer, func(p *policy.Policy) ([]byte, error) { return policy.Sign(p, priv) })
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(*out, data, 0o600); err != nil {
+		return err
+	}
+	fmt.Printf("Política de %s gravada em %s (assinada, key_id %s)\n", *customer, *out, policy.KeyID(priv.Public().(ed25519.PublicKey)))
+	for _, w := range warnings {
+		fmt.Println("  aviso:", w)
+	}
+	return nil
 }

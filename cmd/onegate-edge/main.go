@@ -73,7 +73,7 @@ func usage() {
 	fmt.Fprint(os.Stderr, `ONE GATE Edge
 
 Uso:
-  onegate-edge serve         --policy ARQ [--listen :49] [--events ARQ]
+  onegate-edge serve         --policy ARQ [--listen :49] [--events ARQ] [--pubkey CHAVE]
   onegate-edge check-policy  --policy ARQ
   onegate-edge simulate      --policy ARQ --user USUARIO --device NOME|IP --from IP [--at "AAAA-MM-DD HH:MM"] [--cmd COMANDO]
   onegate-edge hash-password
@@ -88,12 +88,26 @@ func serve(args []string) error {
 	policyPath := fs.String("policy", "/etc/onegate/policy.json", "arquivo da política")
 	listen := fs.String("listen", ":49", "endereço TACACS+")
 	events := fs.String("events", "/var/lib/onegate/events.jsonl", "arquivo de eventos (auditoria/accounting)")
+	pubkey := fs.String("pubkey", os.Getenv("ONEGATE_POLICY_PUBKEY"), "chave pública da nuvem (base64); com ela, só aceita política assinada")
 	_ = fs.Parse(args)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	eng, err := policy.Load(*policyPath)
+	load := func() (*policy.Engine, error) { return policy.Load(*policyPath) }
+	if *pubkey != "" {
+		pub, err := policy.ParsePublicKey(*pubkey)
+		if err != nil {
+			return err
+		}
+		load = func() (*policy.Engine, error) { return policy.LoadSigned(*policyPath, pub) }
+	} else {
+		logger.Warn("sem --pubkey: aceitando política sem assinatura (só para laboratório)")
+	}
+	eng, err := load()
 	if err != nil {
 		return err
+	}
+	for _, w := range eng.Warnings() {
+		logger.Warn("política", "aviso", w)
 	}
 	ev, err := edgelog.OpenFile(*events)
 	if err != nil {
@@ -120,9 +134,13 @@ func serve(args []string) error {
 				_ = l.Close()
 				return
 			}
-			ne, err := policy.Load(*policyPath)
+			ne, err := load()
 			if err != nil {
 				logger.Error("política nova rejeitada; mantendo a atual", "erro", err)
+				continue
+			}
+			if ne.Version() < srv.Policy().Version() {
+				logger.Error("política nova é mais antiga que a atual; mantendo a atual", "nova", ne.Version(), "atual", srv.Policy().Version())
 				continue
 			}
 			srv.SetPolicy(ne)
@@ -139,8 +157,9 @@ func serve(args []string) error {
 func checkPolicy(args []string) error {
 	fs := flag.NewFlagSet("check-policy", flag.ExitOnError)
 	policyPath := fs.String("policy", "/etc/onegate/policy.json", "arquivo da política")
+	pubkey := fs.String("pubkey", os.Getenv("ONEGATE_POLICY_PUBKEY"), "chave pública da nuvem (base64)")
 	_ = fs.Parse(args)
-	eng, err := policy.Load(*policyPath)
+	eng, err := loadAny(*policyPath, *pubkey)
 	if err != nil {
 		return err
 	}
@@ -149,6 +168,18 @@ func checkPolicy(args []string) error {
 		fmt.Println("  aviso:", w)
 	}
 	return nil
+}
+
+// loadAny lê a política assinada (com chave) ou o JSON puro do laboratório.
+func loadAny(path, pubkey string) (*policy.Engine, error) {
+	if pubkey == "" {
+		return policy.Load(path)
+	}
+	pub, err := policy.ParsePublicKey(pubkey)
+	if err != nil {
+		return nil, err
+	}
+	return policy.LoadSigned(path, pub)
 }
 
 // simulate avalia um acesso contra a política sem tocar em equipamento nenhum.
@@ -160,8 +191,9 @@ func simulate(args []string) error {
 	from := fs.String("from", "", "IP de origem do técnico")
 	at := fs.String("at", "", "data e hora no fuso do cliente (AAAA-MM-DD HH:MM); padrão: agora")
 	cmd := fs.String("cmd", "", "comando a autorizar (opcional)")
+	pubkey := fs.String("pubkey", os.Getenv("ONEGATE_POLICY_PUBKEY"), "chave pública da nuvem (base64)")
 	_ = fs.Parse(args)
-	eng, err := policy.Load(*policyPath)
+	eng, err := loadAny(*policyPath, *pubkey)
 	if err != nil {
 		return err
 	}

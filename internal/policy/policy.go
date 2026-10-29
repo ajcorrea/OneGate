@@ -73,8 +73,13 @@ const (
 
 // Policy é o documento completo de um cliente.
 type Policy struct {
-	Format  int   `json:"format"`
+	Format int `json:"format"`
+	// Version cresce a cada documento gerado; o Edge recusa versão menor que a atual.
 	Version int64 `json:"version"`
+	// Versões publicadas das regras globais e do cliente que geraram o documento.
+	GlobalRulesVersion   int    `json:"global_rules_version,omitempty"`
+	CustomerRulesVersion int    `json:"customer_rules_version,omitempty"`
+	GeneratedAt          string `json:"generated_at,omitempty"`
 	// GlobalDomain é o domínio dos acessos globais (ex.: onegate.systems).
 	GlobalDomain string        `json:"global_domain"`
 	Customer     Customer      `json:"customer"`
