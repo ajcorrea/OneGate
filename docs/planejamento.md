@@ -142,3 +142,8 @@ gravação de sessão/bastion, 802.1X/NAC, descoberta, PKI, relatórios, HA da n
   cliente (admin global, operador global, admin do cliente, operador do cliente), e, para os usuários
   AAA, regras por cliente, grupo e IP montadas de forma visual, com simulador antes de publicar.
   O desenho está sendo validado em mockup interativo antes da implementação.
+- **Domínio no usuário (decisão de 29/10):** todo usuário tem domínio. `@onegate.systems` identifica os
+  acessos globais (equipe ON TELECOM); cada cliente tem o próprio domínio (ex.: `@netsulfibra.com.br`),
+  e o usuário daquele domínio só existe naquele cliente. Na tela de regras AAA, Quem, Onde, De onde e
+  O que viram busca com sugestão a partir de 3 letras (preparado para milhares de usuários); IP/CIDR
+  digitado vira faixa avulsa. Quando e MFA continuam como botões.
