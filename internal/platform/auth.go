@@ -31,10 +31,9 @@ const (
 // Session é a sessão autenticada da requisição.
 type Session struct {
 	TokenHash   string
-	UserID      string
-	Email       string
+	UserID      string // id da pessoa
+	Email       string // e-mail de login no painel
 	Name        string
-	Username    string
 	IsAdmin     bool
 	MFAVerified bool
 	TOTPEnabled bool
@@ -88,10 +87,13 @@ func (s *Server) loadSession(r *http.Request) (*Session, error) {
 	var expires, lastSeen time.Time
 	var active bool
 	err = s.DB.Pool.QueryRow(r.Context(), `
-		SELECT s.token_hash, s.user_id::text, u.email, u.name, u.username, u.is_admin, s.mfa_verified, u.totp_enabled,
-		       s.expires_at, s.last_seen_at, u.active
-		FROM sessions s JOIN staff_users u ON u.id = s.user_id WHERE s.token_hash = $1`, th).
-		Scan(&sess.TokenHash, &sess.UserID, &sess.Email, &sess.Name, &sess.Username, &sess.IsAdmin, &sess.MFAVerified, &sess.TOTPEnabled, &expires, &lastSeen, &active)
+		SELECT s.token_hash, s.person_id::text, a.login_email, p.name, a.is_admin, s.mfa_verified, a.totp_enabled,
+		       s.expires_at, s.last_seen_at, a.active AND p.active
+		FROM sessions s
+		JOIN panel_accounts a ON a.person_id = s.person_id
+		JOIN people p ON p.id = s.person_id
+		WHERE s.token_hash = $1`, th).
+		Scan(&sess.TokenHash, &sess.UserID, &sess.Email, &sess.Name, &sess.IsAdmin, &sess.MFAVerified, &sess.TOTPEnabled, &expires, &lastSeen, &active)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -183,11 +185,13 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userID, hash, username string
+	var userID, hash string
 	var active, totpEnabled bool
 	var sealed *string
-	err := s.DB.Pool.QueryRow(r.Context(), `SELECT id::text, password_hash, username, active, totp_enabled, totp_secret FROM staff_users WHERE lower(email) = $1`, email).
-		Scan(&userID, &hash, &username, &active, &totpEnabled, &sealed)
+	err := s.DB.Pool.QueryRow(r.Context(), `
+		SELECT a.person_id::text, a.password_hash, a.active AND p.active, a.totp_enabled, a.totp_secret
+		FROM panel_accounts a JOIN people p ON p.id = a.person_id WHERE lower(a.login_email) = $1`, email).
+		Scan(&userID, &hash, &active, &totpEnabled, &sealed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		passhash.VerifyDummy(req.Password)
 		s.limiter.fail(key, s.now())
@@ -206,7 +210,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			reason = "usuário desativado"
 		}
 		_ = s.DB.WithActor(r.Context(), Actor{Label: email, IP: ip}, func(tx pgx.Tx) error {
-			return audit(r.Context(), tx, Actor{UserID: userID, Label: email, IP: ip}, nil, "login.falha", "staff_user", userID, map[string]any{"motivo": reason})
+			return audit(r.Context(), tx, Actor{UserID: userID, Label: email, IP: ip}, nil, "login.falha", "person", userID, map[string]any{"motivo": reason})
 		})
 		writeError(w, http.StatusUnauthorized, invalidLoginMsg)
 		return
@@ -217,7 +221,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Primeiro acesso: gera (ou reaproveita) a semente para o cadastro no app autenticador.
 		var secret string
 		if sealed != nil {
-			secret, err = s.Box.Open(*sealed, userID)
+			secret, err = s.Box.Open(*sealed, panelCtx(userID))
 		}
 		if sealed == nil || err != nil {
 			secret, err = totp.NewSecret()
@@ -225,21 +229,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 				s.serverError(w, r, err)
 				return
 			}
-			enc, err := s.Box.Seal(secret, userID)
+			enc, err := s.Box.Seal(secret, panelCtx(userID))
 			if err != nil {
 				s.serverError(w, r, err)
 				return
 			}
-			if _, err := s.DB.Pool.Exec(r.Context(), `UPDATE staff_users SET totp_secret = $2, updated_at = now() WHERE id = $1`, userID, enc); err != nil {
+			if _, err := s.DB.Pool.Exec(r.Context(), `UPDATE panel_accounts SET totp_secret = $2, updated_at = now() WHERE person_id = $1`, userID, enc); err != nil {
 				s.serverError(w, r, err)
 				return
 			}
 		}
-		resp = loginResponse{Next: "totp_setup", Secret: secret, OTPAuthURI: totp.ProvisioningURI(totpIssuer, username, secret)}
+		resp = loginResponse{Next: "totp_setup", Secret: secret, OTPAuthURI: totp.ProvisioningURI(totpIssuer+" (painel)", email, secret)}
 	}
 
 	tok, th := newToken()
-	if _, err := s.DB.Pool.Exec(r.Context(), `INSERT INTO sessions (token_hash, user_id, mfa_verified, expires_at, ip, user_agent) VALUES ($1, $2, false, $3, $4, $5)`,
+	if _, err := s.DB.Pool.Exec(r.Context(), `INSERT INTO sessions (token_hash, person_id, mfa_verified, expires_at, ip, user_agent) VALUES ($1, $2, false, $3, $4, $5)`,
 		th, userID, s.now().Add(pendingTTL), ip, truncate(r.UserAgent(), 300)); err != nil {
 		s.serverError(w, r, err)
 		return
@@ -267,7 +271,7 @@ func (s *Server) handleTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var sealed *string
-	if err := s.DB.Pool.QueryRow(r.Context(), `SELECT totp_secret FROM staff_users WHERE id = $1`, sess.UserID).Scan(&sealed); err != nil {
+	if err := s.DB.Pool.QueryRow(r.Context(), `SELECT totp_secret FROM panel_accounts WHERE person_id = $1`, sess.UserID).Scan(&sealed); err != nil {
 		s.serverError(w, r, err)
 		return
 	}
@@ -275,7 +279,7 @@ func (s *Server) handleTOTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Sessão de login expirada. Informe a senha novamente.")
 		return
 	}
-	secret, err := s.Box.Open(*sealed, sess.UserID)
+	secret, err := s.Box.Open(*sealed, panelCtx(sess.UserID))
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -287,7 +291,7 @@ func (s *Server) handleTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Anti-reuso no banco: vale entre várias instâncias da API.
-	tag, err := s.DB.Pool.Exec(r.Context(), `UPDATE staff_users SET totp_last_step = $2 WHERE id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)`, sess.UserID, step)
+	tag, err := s.DB.Pool.Exec(r.Context(), `UPDATE panel_accounts SET totp_last_step = $2 WHERE person_id = $1 AND (totp_last_step IS NULL OR totp_last_step < $2)`, sess.UserID, step)
 	if err != nil {
 		s.serverError(w, r, err)
 		return
@@ -302,7 +306,7 @@ func (s *Server) handleTOTP(w http.ResponseWriter, r *http.Request) {
 	setup := !sess.TOTPEnabled
 	err = s.DB.WithActor(r.Context(), sess.actor(r), func(tx pgx.Tx) error {
 		if setup {
-			if _, err := tx.Exec(r.Context(), `UPDATE staff_users SET totp_enabled = true, updated_at = now() WHERE id = $1`, sess.UserID); err != nil {
+			if _, err := tx.Exec(r.Context(), `UPDATE panel_accounts SET totp_enabled = true, updated_at = now() WHERE person_id = $1`, sess.UserID); err != nil {
 				return err
 			}
 			c, err := replaceRecoveryCodes(r.Context(), tx, sess.UserID)
@@ -310,11 +314,11 @@ func (s *Server) handleTOTP(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 			codes = c
-			if err := audit(r.Context(), tx, sess.actor(r), nil, "mfa.cadastrado", "staff_user", sess.UserID, nil); err != nil {
+			if err := audit(r.Context(), tx, sess.actor(r), nil, "mfa.cadastrado", "person", sess.UserID, nil); err != nil {
 				return err
 			}
 		}
-		return audit(r.Context(), tx, sess.actor(r), nil, "login", "staff_user", sess.UserID, map[string]any{"metodo": "totp"})
+		return audit(r.Context(), tx, sess.actor(r), nil, "login", "person", sess.UserID, map[string]any{"metodo": "totp"})
 	})
 	if err != nil {
 		s.serverError(w, r, err)
@@ -353,17 +357,17 @@ func (s *Server) handleRecovery(w http.ResponseWriter, r *http.Request) {
 	code := normalizeRecovery(req.Code)
 	var left int
 	err := s.DB.WithActor(r.Context(), sess.actor(r), func(tx pgx.Tx) error {
-		tag, err := tx.Exec(r.Context(), `UPDATE recovery_codes SET used_at = now() WHERE user_id = $1 AND code_hash = $2 AND used_at IS NULL`, sess.UserID, hashToken(code))
+		tag, err := tx.Exec(r.Context(), `UPDATE recovery_codes SET used_at = now() WHERE person_id = $1 AND code_hash = $2 AND used_at IS NULL`, sess.UserID, hashToken(code))
 		if err != nil {
 			return err
 		}
 		if tag.RowsAffected() == 0 {
 			return validationError("Código de recuperação inválido ou já usado.")
 		}
-		if err := tx.QueryRow(r.Context(), `SELECT count(*) FROM recovery_codes WHERE user_id = $1 AND used_at IS NULL`, sess.UserID).Scan(&left); err != nil {
+		if err := tx.QueryRow(r.Context(), `SELECT count(*) FROM recovery_codes WHERE person_id = $1 AND used_at IS NULL`, sess.UserID).Scan(&left); err != nil {
 			return err
 		}
-		return audit(r.Context(), tx, sess.actor(r), nil, "login", "staff_user", sess.UserID, map[string]any{"metodo": "codigo_recuperacao", "restantes": left})
+		return audit(r.Context(), tx, sess.actor(r), nil, "login", "person", sess.UserID, map[string]any{"metodo": "codigo_recuperacao", "restantes": left})
 	})
 	if err != nil {
 		var ve validationError
@@ -395,11 +399,11 @@ func (s *Server) promote(w http.ResponseWriter, r *http.Request, sess *Session) 
 	if _, err := tx.Exec(r.Context(), `DELETE FROM sessions WHERE token_hash = $1`, sess.TokenHash); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(r.Context(), `INSERT INTO sessions (token_hash, user_id, mfa_verified, expires_at, ip, user_agent) VALUES ($1, $2, true, $3, $4, $5)`,
+	if _, err := tx.Exec(r.Context(), `INSERT INTO sessions (token_hash, person_id, mfa_verified, expires_at, ip, user_agent) VALUES ($1, $2, true, $3, $4, $5)`,
 		th, sess.UserID, now.Add(sessionTTL), s.clientIP(r), truncate(r.UserAgent(), 300)); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(r.Context(), `UPDATE staff_users SET last_login_at = $2 WHERE id = $1`, sess.UserID, now); err != nil {
+	if _, err := tx.Exec(r.Context(), `UPDATE panel_accounts SET last_login_at = $2 WHERE person_id = $1`, sess.UserID, now); err != nil {
 		return err
 	}
 	if err := tx.Commit(r.Context()); err != nil {
@@ -417,31 +421,39 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-type meRole struct {
-	CustomerID string `json:"customer_id"`
-	Code       string `json:"code"`
-	Name       string `json:"name"`
-	Color      string `json:"color"`
-	Role       string `json:"role"`
+// MeCustomer são as permissões da pessoa num cliente.
+type MeCustomer struct {
+	CustomerID string            `json:"customer_id"`
+	Code       string            `json:"code"`
+	Name       string            `json:"name"`
+	Color      string            `json:"color"`
+	Modules    map[string]string `json:"modules"` // módulo → read | write
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFrom(r)
-	roles := []meRole{}
+	byCustomer := map[string]*MeCustomer{}
+	order := []string{}
 	err := s.DB.WithActor(r.Context(), sess.actor(r), func(tx pgx.Tx) error {
 		rows, err := tx.Query(r.Context(), `
-			SELECT c.id::text, c.code, c.name, c.color, r.role FROM staff_customer_roles r
-			JOIN customers c ON c.id = r.customer_id WHERE r.user_id = $1 ORDER BY c.code`, sess.UserID)
+			SELECT c.id::text, c.code, c.name, c.color, p.module, p.level FROM panel_permissions p
+			JOIN customers c ON c.id = p.customer_id WHERE p.person_id = $1 ORDER BY c.code, p.module`, sess.UserID)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var m meRole
-			if err := rows.Scan(&m.CustomerID, &m.Code, &m.Name, &m.Color, &m.Role); err != nil {
+			var id, code, name, color, mod, lvl string
+			if err := rows.Scan(&id, &code, &name, &color, &mod, &lvl); err != nil {
 				return err
 			}
-			roles = append(roles, m)
+			m, ok := byCustomer[id]
+			if !ok {
+				m = &MeCustomer{CustomerID: id, Code: code, Name: name, Color: color, Modules: map[string]string{}}
+				byCustomer[id] = m
+				order = append(order, id)
+			}
+			m.Modules[mod] = lvl
 		}
 		return rows.Err()
 	})
@@ -449,15 +461,21 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
+	customers := []MeCustomer{}
+	for _, id := range order {
+		customers = append(customers, *byCustomer[id])
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id": sess.UserID, "email": sess.Email, "name": sess.Name, "username": sess.Username,
-		"is_admin": sess.IsAdmin, "roles": roles,
+		"id": sess.UserID, "email": sess.Email, "name": sess.Name, "is_admin": sess.IsAdmin, "customers": customers,
 	})
 }
 
+func panelCtx(personID string) string  { return "panel:" + personID }
+func deviceCtx(personID string) string { return "device:" + personID }
+
 // replaceRecoveryCodes gera 10 códigos de recuperação novos (os antigos deixam de valer).
 func replaceRecoveryCodes(ctx context.Context, tx pgx.Tx, userID string) ([]string, error) {
-	if _, err := tx.Exec(ctx, `DELETE FROM recovery_codes WHERE user_id = $1`, userID); err != nil {
+	if _, err := tx.Exec(ctx, `DELETE FROM recovery_codes WHERE person_id = $1`, userID); err != nil {
 		return nil, err
 	}
 	codes := make([]string, recoveryCount)
@@ -466,7 +484,7 @@ func replaceRecoveryCodes(ctx context.Context, tx pgx.Tx, userID string) ([]stri
 		_, _ = rand.Read(b)
 		raw := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)) // 16 caracteres, 80 bits
 		codes[i] = raw[:4] + "-" + raw[4:8] + "-" + raw[8:12] + "-" + raw[12:]
-		if _, err := tx.Exec(ctx, `INSERT INTO recovery_codes (user_id, code_hash) VALUES ($1, $2)`, userID, hashToken(raw)); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO recovery_codes (person_id, code_hash) VALUES ($1, $2)`, userID, hashToken(raw)); err != nil {
 			return nil, err
 		}
 	}

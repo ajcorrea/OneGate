@@ -5,14 +5,22 @@ import { CustomerBadge } from "../components/CustomerBadge";
 export const actionLabels: Record<string, string> = {
   login: "Login no painel",
   "login.falha": "Falha de login",
-  "mfa.cadastrado": "TOTP cadastrado",
-  "mfa.redefinido": "TOTP redefinido",
+  "mfa.cadastrado": "TOTP do painel cadastrado",
   "cliente.criado": "Cliente cadastrado",
   "cliente.alterado": "Cliente alterado",
-  "equipe.criado": "Membro da equipe cadastrado",
-  "equipe.alterado": "Membro da equipe alterado",
-  "equipe.papel": "Acesso a cliente concedido",
-  "equipe.papeis_definidos": "Acessos por cliente definidos",
+  "pessoa.criada": "Pessoa cadastrada",
+  "pessoa.alterada": "Pessoa alterada",
+  "painel.acesso_criado": "Acesso ao painel criado",
+  "painel.acesso_alterado": "Acesso ao painel alterado",
+  "painel.acesso_removido": "Acesso ao painel removido",
+  "painel.permissoes": "Permissões no painel alteradas",
+  "painel.mfa_redefinido": "TOTP do painel redefinido",
+  "equipamentos.acesso_criado": "Acesso aos equipamentos criado",
+  "equipamentos.acesso_alterado": "Acesso aos equipamentos alterado",
+  "equipamentos.acesso_removido": "Acesso aos equipamentos removido",
+  "equipamentos.totp_gerado": "TOTP dos equipamentos gerado",
+  "equipamentos.cliente_liberado": "Equipamentos do cliente liberados",
+  "equipamentos.cliente_removido": "Equipamentos do cliente bloqueados",
 };
 
 export function describe(e: AuditEntry): string {
@@ -39,7 +47,7 @@ export function AuditTable({ entries, customers, compact = false }: { entries: A
                 <td><span style={{ display: "flex", flexDirection: "column" }}>{e.actor}{!compact && e.ip && <span className="muted mono" style={{ fontSize: 11.5 }}>{e.ip}</span>}</span></td>
                 <td>{c ? <CustomerBadge code={c.code} name={c.name} color={c.color} /> : <span className="muted">Plataforma</span>}</td>
                 <td>
-                  <span className={"pill " + (e.action.includes("falha") ? "pill-err" : e.action.startsWith("mfa") ? "pill-warn" : "pill-info")}>
+                  <span className={"pill " + (e.action.includes("falha") ? "pill-err" : /mfa|totp/.test(e.action) ? "pill-warn" : "pill-info")}>
                     {actionLabels[e.action] ?? e.action}
                   </span>
                 </td>

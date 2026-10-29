@@ -23,20 +23,28 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
+  del: <T>(path: string) => request<T>("DELETE", path, {}),
   post: <T>(path: string, body: unknown = {}) => request<T>("POST", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
 };
 
-export type Role = "viewer" | "operator" | "admin";
+export type Module = "aaa" | "servers" | "commands" | "audit";
+export type Level = "read" | "write";
+
+export const moduleLabels: Record<Module, string> = {
+  aaa: "Acesso à rede (AAA)",
+  servers: "Servidores",
+  commands: "Comandos em massa",
+  audit: "Auditoria",
+};
 
 export interface Me {
   id: string;
   email: string;
   name: string;
-  username: string;
   is_admin: boolean;
-  roles: { customer_id: string; code: string; name: string; color: string; role: Role }[];
+  customers: { customer_id: string; code: string; name: string; color: string; modules: Partial<Record<Module, Level>> }[];
 }
 
 export interface Customer {
@@ -52,17 +60,34 @@ export interface Customer {
   updated_at: string;
 }
 
-export interface StaffUser {
+export interface Permission {
+  customer_id: string;
+  module: Module;
+  level: Level;
+}
+
+export interface Person {
   id: string;
-  email: string;
-  username: string;
   name: string;
-  is_admin: boolean;
+  email: string | null;
+  phone: string | null;
   active: boolean;
-  totp_enabled: boolean;
-  last_login_at: string | null;
   created_at: string;
-  roles: { customer_id: string; role: Role }[];
+  panel: {
+    login_email: string;
+    is_admin: boolean;
+    active: boolean;
+    totp_enabled: boolean;
+    last_login_at: string | null;
+    permissions: Permission[];
+  } | null;
+  device: {
+    username: string;
+    active: boolean;
+    totp_configured: boolean;
+    password_changed_at: string;
+    customers: string[];
+  } | null;
 }
 
 export interface AuditEntry {
@@ -90,11 +115,13 @@ export const segments: Record<string, string> = {
   outro: "Outro",
 };
 
-export const roleLabels: Record<Role, string> = {
-  viewer: "Leitura",
-  operator: "Operador",
-  admin: "Administrador do cliente",
-};
+/** Papéis prontos: atalhos para preencher a matriz de permissões de um cliente. */
+export const presets: { id: string; label: string; modules: Partial<Record<Module, Level>> }[] = [
+  { id: "none", label: "Sem acesso", modules: {} },
+  { id: "viewer", label: "Leitura", modules: { aaa: "read", servers: "read", commands: "read", audit: "read" } },
+  { id: "operator", label: "Operador", modules: { aaa: "read", servers: "write", commands: "write", audit: "read" } },
+  { id: "admin", label: "Administrador do cliente", modules: { aaa: "write", servers: "write", commands: "write", audit: "read" } },
+];
 
 export function formatDate(iso: string | null): string {
   if (!iso) return "—";

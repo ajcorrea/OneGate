@@ -45,7 +45,7 @@ export function Layout() {
           <Soon icon="terminal" label="Comandos em massa" day="dia 11" />
           <span className="nav-section">Administração</span>
           <Item to="/clientes" icon="building" label="Clientes" />
-          {me.is_admin && <Item to="/equipe" icon="users" label="Equipe e permissões" />}
+          {me.is_admin && <Item to="/pessoas" icon="users" label="Pessoas e acessos" />}
           <Item to="/auditoria" icon="file" label="Auditoria" />
         </nav>
       </aside>
@@ -68,7 +68,7 @@ export function Layout() {
             </span>
             <span style={{ display: "flex", flexDirection: "column" }}>
               <strong style={{ fontSize: 13 }}>{me.name}</strong>
-              <span className="muted" style={{ fontSize: 11 }}>{me.is_admin ? "Administrador" : "Equipe"} · {me.username}</span>
+              <span className="muted" style={{ fontSize: 11 }}>{me.is_admin ? "Administrador" : "Equipe"} · {me.email}</span>
             </span>
           </div>
           <button type="button" className="btn btn-icon" onClick={() => void logout()} aria-label="Sair">

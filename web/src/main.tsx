@@ -8,7 +8,7 @@ import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { Customers } from "./pages/Customers";
-import { Staff } from "./pages/Staff";
+import { People } from "./pages/People";
 import { Audit } from "./pages/Audit";
 
 function App() {
@@ -20,7 +20,7 @@ function App() {
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
         <Route path="clientes" element={<Customers />} />
-        {me.is_admin && <Route path="equipe" element={<Staff />} />}
+        {me.is_admin && <Route path="pessoas" element={<People />} />}
         <Route path="auditoria" element={<Audit />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

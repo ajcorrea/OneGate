@@ -13,7 +13,7 @@
 //
 //	onegate-api                       inicia a API (aplica as migrações)
 //	onegate-api migrate               só aplica as migrações
-//	onegate-api bootstrap-admin --email E --name N --username U
+//	onegate-api bootstrap-admin --email E --name N
 package main
 
 import (
@@ -56,7 +56,7 @@ func main() {
 	case "version":
 		fmt.Println("onegate-api", version)
 	default:
-		fmt.Fprintln(os.Stderr, "uso: onegate-api [serve | migrate | bootstrap-admin --email E --name N --username U | version]")
+		fmt.Fprintln(os.Stderr, "uso: onegate-api [serve | migrate | bootstrap-admin --email E --name N | version]")
 		os.Exit(2)
 	}
 	if err != nil {
@@ -156,10 +156,9 @@ func bootstrapAdmin(args []string) error {
 	fs := flag.NewFlagSet("bootstrap-admin", flag.ExitOnError)
 	email := fs.String("email", "", "e-mail")
 	name := fs.String("name", "", "nome completo")
-	username := fs.String("username", "", "usuário (o mesmo usado nos equipamentos)")
 	_ = fs.Parse(args)
-	if *email == "" || *name == "" || *username == "" {
-		return errors.New("informe --email, --name e --username")
+	if *email == "" || *name == "" {
+		return errors.New("informe --email e --name")
 	}
 	ctx := context.Background()
 	db, box, err := open(ctx)
@@ -173,11 +172,10 @@ func bootstrapAdmin(args []string) error {
 		return err
 	}
 	s := platform.NewServer(db, box, slog.Default())
-	u, err := s.CreateStaff(ctx, platform.System, platform.NewStaff{Email: *email, Name: *name, Username: *username, Password: pw, IsAdmin: true})
-	if err != nil {
+	if _, err := s.CreatePanelUser(ctx, platform.System, platform.NewPanelUser{Email: *email, Name: *name, Password: pw, IsAdmin: true}); err != nil {
 		return err
 	}
-	fmt.Printf("Administrador %s criado. No primeiro login o painel mostra o QR Code para cadastrar o app autenticador.\n", u.Email)
+	fmt.Printf("Administrador %s criado. No primeiro login o painel mostra o QR Code para cadastrar o app autenticador.\n", strings.ToLower(*email))
 	return nil
 }
 

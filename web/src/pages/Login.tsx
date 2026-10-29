@@ -98,7 +98,7 @@ export function Login() {
             <h1 style={{ fontSize: 22 }}>Ative o código de acesso (TOTP)</h1>
             <p className="muted" style={{ margin: 0 }}>
               Leia o QR Code com um app autenticador (Google Authenticator, Microsoft Authenticator, Authy, Bitwarden…).
-              O mesmo código vale para entrar nos equipamentos dos clientes.
+              Este código é só do painel: o acesso aos equipamentos tem usuário, senha e TOTP próprios.
             </p>
             <canvas ref={qrRef} className="qr" aria-label="QR Code para o app autenticador" />
             <details>

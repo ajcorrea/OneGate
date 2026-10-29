@@ -56,12 +56,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/customers/{id}", s.authed(s.handleGetCustomer))
 	mux.HandleFunc("PATCH /api/customers/{id}", s.admin(s.handleUpdateCustomer))
 
-	// Equipe
-	mux.HandleFunc("GET /api/staff", s.admin(s.handleListStaff))
-	mux.HandleFunc("POST /api/staff", s.admin(s.handleCreateStaff))
-	mux.HandleFunc("PATCH /api/staff/{id}", s.admin(s.handleUpdateStaff))
-	mux.HandleFunc("PUT /api/staff/{id}/roles", s.admin(s.handleSetRoles))
-	mux.HandleFunc("POST /api/staff/{id}/reset-totp", s.admin(s.handleResetTOTP))
+	// Pessoas: acesso ao painel e acesso aos equipamentos são independentes
+	mux.HandleFunc("GET /api/people", s.admin(s.handleListPeople))
+	mux.HandleFunc("POST /api/people", s.admin(s.handleCreatePerson))
+	mux.HandleFunc("PATCH /api/people/{id}", s.admin(s.handleUpdatePerson))
+	mux.HandleFunc("PUT /api/people/{id}/panel", s.admin(s.handlePutPanel))
+	mux.HandleFunc("DELETE /api/people/{id}/panel", s.admin(s.handleDeletePanel))
+	mux.HandleFunc("PUT /api/people/{id}/panel/permissions", s.admin(s.handleSetPermissions))
+	mux.HandleFunc("POST /api/people/{id}/panel/reset-totp", s.admin(s.handleResetPanelTOTP))
+	mux.HandleFunc("PUT /api/people/{id}/device", s.admin(s.handlePutDevice))
+	mux.HandleFunc("DELETE /api/people/{id}/device", s.admin(s.handleDeleteDevice))
+	mux.HandleFunc("POST /api/people/{id}/device/totp", s.admin(s.handleNewDeviceTOTP))
+	mux.HandleFunc("PUT /api/people/{id}/device/customers", s.admin(s.handleSetDeviceCustomers))
 
 	// Auditoria
 	mux.HandleFunc("GET /api/audit", s.authed(s.handleListAudit))

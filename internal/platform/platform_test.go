@@ -130,7 +130,7 @@ func TestPlatformFlow(t *testing.T) {
 	ctx := context.Background()
 	const adminPW, techPW = "senha-do-admin-123", "senha-do-tecnico-1"
 
-	if _, err := s.CreateStaff(ctx, System, NewStaff{Email: "Admin@OnTelecom.io", Name: "Admin", Username: "admin", Password: adminPW, IsAdmin: true}); err != nil {
+	if _, err := s.CreatePanelUser(ctx, System, NewPanelUser{Email: "Admin@OnTelecom.io", Name: "Admin", Password: adminPW, IsAdmin: true}); err != nil {
 		t.Fatal(err)
 	}
 	admin := newClient(t, hs)
@@ -150,7 +150,7 @@ func TestPlatformFlow(t *testing.T) {
 		t.Fatalf("cadastro do TOTP: secret=%q codes=%v", adminSecret, codes)
 	}
 	var me map[string]any
-	if st := admin.do("GET", "/api/auth/me", nil, &me); st != 200 || me["is_admin"] != true || me["username"] != "admin" {
+	if st := admin.do("GET", "/api/auth/me", nil, &me); st != 200 || me["is_admin"] != true || me["email"] != "admin@ontelecom.io" {
 		t.Fatalf("me: %d %v", st, me)
 	}
 
@@ -180,21 +180,37 @@ func TestPlatformFlow(t *testing.T) {
 		t.Fatalf("alterar cliente: %d %+v", st, upd)
 	}
 
-	// Técnico com papel só na NSF
-	var tech StaffUser
-	if st := admin.do("POST", "/api/staff", map[string]any{"email": "tecnico@ontelecom.io", "name": "Técnico", "username": "tecnico.n1", "password": techPW}, &tech); st != 201 {
-		t.Fatalf("criar técnico: %d", st)
+	// Pessoa com acesso ao painel: Servidores (escrita) e Auditoria (leitura) só na NSF
+	var tech Person
+	if st := admin.do("POST", "/api/people", map[string]any{"name": "Técnico", "email": "tecnico@ontelecom.io"}, &tech); st != 201 || tech.Panel != nil || tech.Device != nil {
+		t.Fatalf("criar pessoa: %d %+v", st, tech)
 	}
-	if st := admin.do("POST", "/api/staff", map[string]any{"email": "x@ontelecom.io", "name": "X", "username": "x.y", "password": "curta"}, nil); st != 400 {
+	if st := admin.do("PUT", "/api/people/"+tech.ID+"/panel", map[string]any{"login_email": "tecnico@ontelecom.io"}, nil); st != 400 {
+		t.Fatalf("acesso ao painel sem senha inicial: %d", st)
+	}
+	if st := admin.do("PUT", "/api/people/"+tech.ID+"/panel", map[string]any{"login_email": "tecnico@ontelecom.io", "password": "curta"}, nil); st != 400 {
 		t.Fatalf("senha curta: %d", st)
 	}
-	if st := admin.do("PUT", "/api/staff/"+tech.ID+"/roles", []StaffRole{{CustomerID: nsf.ID, Role: "viewer"}}, nil); st != 200 {
-		t.Fatalf("papéis: %d", st)
+	if st := admin.do("PUT", "/api/people/"+tech.ID+"/panel", map[string]any{"login_email": "tecnico@ontelecom.io", "password": techPW}, &tech); st != 200 || tech.Panel == nil || !tech.Panel.Active {
+		t.Fatalf("acesso ao painel: %d %+v", st, tech.Panel)
+	}
+	perms := []Permission{{CustomerID: nsf.ID, Module: "servers", Level: "write"}, {CustomerID: nsf.ID, Module: "audit", Level: "read"}}
+	if st := admin.do("PUT", "/api/people/"+tech.ID+"/panel/permissions", perms, &tech); st != 200 || len(tech.Panel.Permissions) != 2 {
+		t.Fatalf("permissões: %d %+v", st, tech.Panel)
+	}
+	if st := admin.do("PUT", "/api/people/"+tech.ID+"/panel/permissions", []Permission{{CustomerID: nsf.ID, Module: "financeiro", Level: "read"}}, nil); st != 400 {
+		t.Fatalf("módulo inválido: %d", st)
 	}
 
 	techC := newClient(t, hs)
 	var techSecret string
 	techC.login(clk, "tecnico@ontelecom.io", techPW, &techSecret)
+	var techMe struct {
+		Customers []MeCustomer `json:"customers"`
+	}
+	if st := techC.do("GET", "/api/auth/me", nil, &techMe); st != 200 || len(techMe.Customers) != 1 || techMe.Customers[0].Modules["servers"] != "write" {
+		t.Fatalf("permissões no /me: %d %+v", st, techMe)
+	}
 
 	// RLS: o técnico só enxerga a NSF
 	var list []Customer
@@ -207,8 +223,42 @@ func TestPlatformFlow(t *testing.T) {
 	if st := techC.do("POST", "/api/customers", map[string]any{"code": "ABC", "name": "Abc", "color": "#000000"}, nil); st != 403 {
 		t.Fatalf("técnico não pode criar cliente: %d", st)
 	}
-	if st := techC.do("GET", "/api/staff", nil, nil); st != 403 {
-		t.Fatalf("técnico não pode listar equipe: %d", st)
+	if st := techC.do("GET", "/api/people", nil, nil); st != 403 {
+		t.Fatalf("técnico não pode listar pessoas: %d", st)
+	}
+
+	// Pessoa só com acesso aos equipamentos (sem painel): credencial separada
+	var field Person
+	admin.do("POST", "/api/people", map[string]any{"name": "Terceiro Redes"}, &field)
+	if st := admin.do("PUT", "/api/people/"+field.ID+"/device", map[string]any{"username": "terceiro.redes", "password": "senha-equipamento-1"}, &field); st != 200 || field.Device == nil || field.Panel != nil {
+		t.Fatalf("acesso aos equipamentos: %d %+v", st, field)
+	}
+	if st := admin.do("PUT", "/api/people/"+tech.ID+"/device", map[string]any{"username": "terceiro.redes", "password": "outra-senha-123"}, nil); st != 409 {
+		t.Fatalf("usuário de equipamento duplicado: %d", st)
+	}
+	var otp struct {
+		Secret string `json:"secret"`
+		URI    string `json:"otpauth_uri"`
+	}
+	if st := admin.do("POST", "/api/people/"+field.ID+"/device/totp", map[string]any{}, &otp); st != 200 || otp.Secret == "" || !bytes.Contains([]byte(otp.URI), []byte("terceiro.redes")) {
+		t.Fatalf("TOTP de equipamento: %d %+v", st, otp)
+	}
+	if st := admin.do("PUT", "/api/people/"+field.ID+"/device/customers", []string{nsf.ID}, &field); st != 200 || len(field.Device.Customers) != 1 || !field.Device.TOTPConfigured {
+		t.Fatalf("clientes do equipamento: %d %+v", st, field.Device)
+	}
+	// O segredo do equipamento é cifrado com contexto próprio: não é o TOTP do painel
+	var sealed string
+	_ = s.DB.Pool.QueryRow(ctx, `SELECT totp_secret FROM device_accounts WHERE person_id = $1`, field.ID).Scan(&sealed)
+	if got, err := s.Box.Open(sealed, deviceCtx(field.ID)); err != nil || got != otp.Secret {
+		t.Fatalf("segredo do equipamento: %v", err)
+	}
+	if _, err := s.Box.Open(sealed, panelCtx(field.ID)); err == nil {
+		t.Fatal("segredo do equipamento não pode abrir no contexto do painel")
+	}
+	// Quem só tem acesso aos equipamentos não entra no painel
+	fc := newClient(t, hs)
+	if st := fc.do("POST", "/api/auth/login", map[string]string{"email": "terceiro.redes", "password": "senha-equipamento-1"}, nil); st != 401 {
+		t.Fatalf("credencial de equipamento entrou no painel: %d", st)
 	}
 
 	// Auditoria: o técnico vê só eventos da NSF; o admin vê tudo
@@ -225,7 +275,6 @@ func TestPlatformFlow(t *testing.T) {
 	}
 
 	// Auditoria é somente acréscimo: nem o administrador altera ou apaga eventos
-	// (sem política RLS de UPDATE/DELETE e com gatilho de bloqueio para quem contornar o RLS).
 	_ = s.DB.WithActor(ctx, System, func(tx pgx.Tx) error {
 		_, _ = tx.Exec(ctx, `UPDATE audit_log SET action = 'x'`)
 		_, _ = tx.Exec(ctx, `DELETE FROM audit_log`)
@@ -259,12 +308,12 @@ func TestPlatformFlow(t *testing.T) {
 		t.Fatalf("código de recuperação reutilizado: %d", st)
 	}
 
-	// Desativar o técnico derruba as sessões dele
-	if st := admin.do("PATCH", "/api/staff/"+tech.ID, map[string]any{"active": false}, nil); st != 200 {
+	// Desativar a pessoa derruba as sessões dela
+	if st := admin.do("PATCH", "/api/people/"+tech.ID, map[string]any{"active": false}, nil); st != 200 {
 		t.Fatalf("desativar: %d", st)
 	}
 	if st := techC.do("GET", "/api/customers", nil, nil); st != 401 {
-		t.Fatalf("sessão de técnico desativado continua válida: %d", st)
+		t.Fatalf("sessão de pessoa desativada continua válida: %d", st)
 	}
 
 	// Logout
@@ -278,7 +327,7 @@ func TestPlatformFlow(t *testing.T) {
 
 func TestLoginRateLimit(t *testing.T) {
 	s, hs, _ := testServer(t)
-	if _, err := s.CreateStaff(context.Background(), System, NewStaff{Email: "a@b.io", Name: "Ana", Username: "ana", Password: "senha-correta-123"}); err != nil {
+	if _, err := s.CreatePanelUser(context.Background(), System, NewPanelUser{Email: "a@b.io", Name: "Ana", Password: "senha-correta-123"}); err != nil {
 		t.Fatal(err)
 	}
 	c := newClient(t, hs)

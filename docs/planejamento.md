@@ -130,5 +130,15 @@ gravação de sessão/bastion, 802.1X/NAC, descoberta, PKI, relatórios, HA da n
 - **Painel:** login/cadastro do TOTP, visão geral, clientes, equipe e permissões, auditoria,
   temas claro e escuro.
 
-Decisão tomada na implementação: o painel e os equipamentos usam **o mesmo usuário e o mesmo TOTP**
-de cada técnico (um cadastro só). A sincronização da senha e do TOTP para os Edges entra no dia 7.
+### Pessoas e acessos (decisão de 29/10)
+
+- **Uma pessoa, dois acessos independentes**, cada um com credenciais próprias:
+  - **Usuário ONE GATE** (painel): e-mail, senha e TOTP do painel.
+  - **Usuário AAA** (equipamentos e servidores dos clientes): usuário, senha e TOTP próprios,
+    publicados para os Edges dos clientes liberados. Não entra no painel.
+- Vazar a senha de um acesso não compromete o outro. Desativar a pessoa bloqueia os dois.
+- **Permissões (em redesenho):** a primeira versão tem permissões por cliente × módulo. O modelo final
+  será uma árvore de menus/funções atribuível por tipo, grupo e usuário, com escopo global ou por
+  cliente (admin global, operador global, admin do cliente, operador do cliente), e, para os usuários
+  AAA, regras por cliente, grupo e IP montadas de forma visual, com simulador antes de publicar.
+  O desenho está sendo validado em mockup interativo antes da implementação.
