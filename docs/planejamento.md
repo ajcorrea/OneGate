@@ -147,3 +147,8 @@ gravação de sessão/bastion, 802.1X/NAC, descoberta, PKI, relatórios, HA da n
   e o usuário daquele domínio só existe naquele cliente. Na tela de regras AAA, Quem, Onde, De onde e
   O que viram busca com sugestão a partir de 3 letras (preparado para milhares de usuários); IP/CIDR
   digitado vira faixa avulsa. Quando e MFA continuam como botões.
+- **Campo vazio = sem acesso (decisão de 29/10):** uma regra só vale com todos os campos preenchidos
+  (em "Negar", O que e MFA não se aplicam). Para liberar tudo, usa-se um objeto pré-definido explícito:
+  Todos os usuários / Ninguém, Todos os equipamentos / Nenhum, Qualquer IP / Nenhum IP, Nenhum comando,
+  Sempre / Nunca, e no MFA "Segue o equipamento". Pré-definido é exclusivo no campo. Regra incompleta
+  aparece com aviso e é ignorada pelo Edge e pelo simulador.
