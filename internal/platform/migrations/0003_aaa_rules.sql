@@ -8,13 +8,8 @@
 -- * Publicar grava um snapshot (regras + objetos, sem segredos). O Edge recebe sempre o último
 --   snapshot global + o último do cliente, com os técnicos e equipamentos atuais.
 
-CREATE TABLE aaa_customer_settings (
-  customer_id          uuid PRIMARY KEY REFERENCES customers(id) ON DELETE CASCADE,
-  mfa                  text NOT NULL DEFAULT 'totp' CHECK (mfa IN ('off', 'totp')),
-  trust_window_seconds integer NOT NULL DEFAULT 14400 CHECK (trust_window_seconds BETWEEN 0 AND 86400),
-  timezone             text NOT NULL DEFAULT 'America/Sao_Paulo',
-  updated_at           timestamptz NOT NULL DEFAULT now()
-);
+-- MFA padrão e janela de confiança já ficam em customers; os horários das regras usam o fuso do cliente.
+ALTER TABLE customers ADD COLUMN timezone text NOT NULL DEFAULT 'America/Sao_Paulo';
 
 CREATE TABLE aaa_objects (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -105,11 +100,6 @@ CREATE FUNCTION og_aaa_write(cid uuid) RETURNS boolean
 LANGUAGE sql STABLE AS $$
   SELECT CASE WHEN cid IS NULL THEN og_is_admin() OR og_is_global() ELSE og_can_see(cid) END
 $$;
-
-ALTER TABLE aaa_customer_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE aaa_customer_settings FORCE ROW LEVEL SECURITY;
-CREATE POLICY aaa_settings_all ON aaa_customer_settings
-  USING (og_can_see(customer_id)) WITH CHECK (og_can_see(customer_id));
 
 ALTER TABLE aaa_objects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE aaa_objects FORCE ROW LEVEL SECURITY;

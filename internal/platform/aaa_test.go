@@ -365,3 +365,23 @@ func TestAAARulesFlow(t *testing.T) {
 		}
 	}
 }
+
+func TestCustomerTimezone(t *testing.T) {
+	s, hs, clk := testServer(t)
+	if _, err := s.CreatePanelUser(context.Background(), System, NewPanelUser{Login: "admin", Name: "Admin", Password: "senha-do-admin-123", TypeKey: "global_admin"}); err != nil {
+		t.Fatal(err)
+	}
+	admin := newClient(t, hs)
+	var sec string
+	admin.login(clk, "admin@onegate.systems", "senha-do-admin-123", &sec)
+	var c Customer
+	if st := admin.do("POST", "/api/customers", map[string]any{"code": "VLC", "name": "Vale Conecta", "domain": "valeconecta.com.br", "color": "#0F7B53"}, &c); st != 201 || c.Timezone != "America/Sao_Paulo" {
+		t.Fatalf("fuso padrão: %d %q", st, c.Timezone)
+	}
+	if st := admin.do("PATCH", "/api/customers/"+c.ID, map[string]any{"timezone": "America/Manaus"}, &c); st != 200 || c.Timezone != "America/Manaus" {
+		t.Fatalf("trocar fuso: %d %q", st, c.Timezone)
+	}
+	if st := admin.do("PATCH", "/api/customers/"+c.ID, map[string]any{"timezone": "Lua/Base"}, nil); st != 400 {
+		t.Fatalf("fuso inválido: %d", st)
+	}
+}

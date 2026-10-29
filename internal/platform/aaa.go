@@ -339,23 +339,6 @@ func loadDevices(ctx context.Context, tx pgx.Tx, cid, onlyID string) ([]*aaaDevi
 	return out, rows.Err()
 }
 
-// aaaSettings são os padrões AAA do cliente.
-type aaaSettings struct {
-	MFA                string `json:"mfa"`
-	TrustWindowSeconds int    `json:"trust_window_seconds"`
-	Timezone           string `json:"timezone"`
-}
-
-func loadSettings(ctx context.Context, tx pgx.Tx, cid string) (aaaSettings, error) {
-	st := aaaSettings{MFA: "totp", TrustWindowSeconds: 14400, Timezone: policy.DefaultTimezone}
-	err := tx.QueryRow(ctx, `SELECT mfa, trust_window_seconds, timezone FROM aaa_customer_settings WHERE customer_id = $1`, cid).
-		Scan(&st.MFA, &st.TrustWindowSeconds, &st.Timezone)
-	if errors.Is(err, pgx.ErrNoRows) {
-		err = nil
-	}
-	return st, err
-}
-
 // technician é uma pessoa com acesso aos equipamentos.
 type technician struct {
 	PersonID   string
@@ -418,17 +401,16 @@ type builtPolicy struct {
 
 // buildPolicy gera o documento do Edge de um cliente.
 func (s *Server) buildPolicy(ctx context.Context, tx pgx.Tx, cid string, mode buildMode) (*builtPolicy, error) {
-	var code, name, domain string
-	if err := tx.QueryRow(ctx, `SELECT code, name, domain FROM customers WHERE id = $1`, cid).Scan(&code, &name, &domain); err != nil {
+	var code, name, domain, mfa, tz string
+	var window int
+	if err := tx.QueryRow(ctx, `SELECT code, name, domain, mfa, trust_window_seconds, timezone FROM customers WHERE id = $1`, cid).
+		Scan(&code, &name, &domain, &mfa, &window, &tz); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
-	st, err := loadSettings(ctx, tx, cid)
-	if err != nil {
-		return nil, err
-	}
+	var err error
 	out := &builtPolicy{}
 	gdom := GlobalDomain
 	p := &policy.Policy{
@@ -436,8 +418,8 @@ func (s *Server) buildPolicy(ctx context.Context, tx pgx.Tx, cid string, mode bu
 		Version:      time.Now().UnixMilli(),
 		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
 		GlobalDomain: gdom,
-		Customer: policy.Customer{Code: code, Name: name, Domain: domain, MFA: policy.MFAMode(st.MFA),
-			TrustWindowSeconds: st.TrustWindowSeconds, Timezone: st.Timezone},
+		Customer: policy.Customer{Code: code, Name: name, Domain: domain, MFA: policy.MFAMode(mfa),
+			TrustWindowSeconds: window, Timezone: tz},
 		DeviceGroups: []policy.DeviceGroup{}, Devices: []policy.Device{}, UserGroups: []policy.UserGroup{},
 		Users: []policy.User{}, Networks: []policy.Network{}, Profiles: []policy.Profile{}, Schedules: []policy.Schedule{},
 		Rules: []policy.Rule{},

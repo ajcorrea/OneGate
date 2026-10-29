@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/ajcorrea/onegate/internal/policy"
 )
 
 // Customer é um cliente da ON TELECOM (provedor ou empresa de outro segmento).
@@ -21,16 +23,17 @@ type Customer struct {
 	Color              string    `json:"color"`
 	MFA                string    `json:"mfa"`
 	TrustWindowSeconds int       `json:"trust_window_seconds"`
+	Timezone           string    `json:"timezone"`
 	Active             bool      `json:"active"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }
 
-const customerCols = `id::text, code, name, domain, segment, color, mfa, trust_window_seconds, active, created_at, updated_at`
+const customerCols = `id::text, code, name, domain, segment, color, mfa, trust_window_seconds, timezone, active, created_at, updated_at`
 
 func scanCustomer(row pgx.Row) (Customer, error) {
 	var c Customer
-	err := row.Scan(&c.ID, &c.Code, &c.Name, &c.Domain, &c.Segment, &c.Color, &c.MFA, &c.TrustWindowSeconds, &c.Active, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.Code, &c.Name, &c.Domain, &c.Segment, &c.Color, &c.MFA, &c.TrustWindowSeconds, &c.Timezone, &c.Active, &c.CreatedAt, &c.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, ErrNotFound
 	}
@@ -99,6 +102,7 @@ type customerInput struct {
 	Color              *string `json:"color"`
 	MFA                *string `json:"mfa"`
 	TrustWindowSeconds *int    `json:"trust_window_seconds"`
+	Timezone           *string `json:"timezone"`
 	Active             *bool   `json:"active"`
 }
 
@@ -178,6 +182,16 @@ func (in customerInput) apply(c *Customer) (map[string]any, error) {
 		}
 		c.TrustWindowSeconds = v
 	}
+	if in.Timezone != nil {
+		v := strings.TrimSpace(*in.Timezone)
+		if !policy.ValidTimezone(v) {
+			return nil, validationError("Fuso horário inválido (ex.: America/Sao_Paulo).")
+		}
+		if v != c.Timezone {
+			changes["timezone"] = v
+		}
+		c.Timezone = v
+	}
 	if in.Active != nil {
 		if *in.Active != c.Active {
 			changes["active"] = *in.Active
@@ -203,7 +217,7 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Código, nome, domínio e cor são obrigatórios.")
 		return
 	}
-	c := Customer{Segment: "provedor", MFA: "totp", TrustWindowSeconds: 3600, Active: true}
+	c := Customer{Segment: "provedor", MFA: "totp", TrustWindowSeconds: 3600, Timezone: policy.DefaultTimezone, Active: true}
 	if _, err := in.apply(&c); err != nil {
 		s.serverError(w, r, err)
 		return
@@ -211,9 +225,9 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 	err := s.DB.WithActor(r.Context(), sess.actor(r), func(tx pgx.Tx) error {
 		var err error
 		c, err = scanCustomer(tx.QueryRow(r.Context(), `
-			INSERT INTO customers (code, name, domain, segment, color, mfa, trust_window_seconds, active)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+customerCols,
-			c.Code, c.Name, c.Domain, c.Segment, c.Color, c.MFA, c.TrustWindowSeconds, c.Active))
+			INSERT INTO customers (code, name, domain, segment, color, mfa, trust_window_seconds, timezone, active)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING `+customerCols,
+			c.Code, c.Name, c.Domain, c.Segment, c.Color, c.MFA, c.TrustWindowSeconds, c.Timezone, c.Active))
 		if uniqueViolation(err) {
 			return conflictError("Já existe um cliente com o código " + c.Code + " ou o domínio " + c.Domain + ".")
 		}
@@ -257,9 +271,9 @@ func (s *Server) handleUpdateCustomer(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 		c, err = scanCustomer(tx.QueryRow(r.Context(), `
-			UPDATE customers SET code=$2, name=$3, segment=$4, color=$5, mfa=$6, trust_window_seconds=$7, active=$8, updated_at=now()
+			UPDATE customers SET code=$2, name=$3, segment=$4, color=$5, mfa=$6, trust_window_seconds=$7, active=$8, timezone=$9, updated_at=now()
 			WHERE id = $1 RETURNING `+customerCols,
-			id, c.Code, c.Name, c.Segment, c.Color, c.MFA, c.TrustWindowSeconds, c.Active))
+			id, c.Code, c.Name, c.Segment, c.Color, c.MFA, c.TrustWindowSeconds, c.Active, c.Timezone))
 		if uniqueViolation(err) {
 			return conflictError("Já existe um cliente com o código " + c.Code + ".")
 		}

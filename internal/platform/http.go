@@ -84,7 +84,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /api/panel-groups/{id}/overrides", s.authed(s.handleGroupOverrides))
 	mux.HandleFunc("DELETE /api/panel-groups/{id}", s.authed(s.handleDeleteGroup))
 
-	// AAA: objetos, equipamentos, padrões do cliente, regras (rascunho e publicação) e simulador.
+	// AAA: objetos, equipamentos, regras (rascunho e publicação) e simulador.
 	// ?customer_id= define o escopo; sem ele, o escopo é global.
 	mux.HandleFunc("GET /api/aaa/objects", s.authed(s.handleListObjects))
 	mux.HandleFunc("POST /api/aaa/objects", s.authed(s.handleCreateObject))
@@ -96,8 +96,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PATCH /api/aaa/devices/{id}", s.authed(s.handleUpdateDevice))
 	mux.HandleFunc("DELETE /api/aaa/devices/{id}", s.authed(s.handleDeleteEquipment))
 	mux.HandleFunc("POST /api/aaa/devices/{id}/rotate-secret", s.authed(s.handleRotateDeviceSecret))
-	mux.HandleFunc("GET /api/aaa/settings", s.authed(s.handleGetSettings))
-	mux.HandleFunc("PUT /api/aaa/settings", s.authed(s.handlePutSettings))
 	mux.HandleFunc("GET /api/aaa/rules", s.authed(s.handleGetRules))
 	mux.HandleFunc("PUT /api/aaa/rules", s.authed(s.handlePutRules))
 	mux.HandleFunc("POST /api/aaa/publish", s.authed(s.handlePublish))
