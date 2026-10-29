@@ -1,0 +1,4 @@
+.env
+dados/
+credenciais-lab.txt
+__pycache__/

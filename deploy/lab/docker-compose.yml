@@ -1,0 +1,60 @@
+# Laboratório ONE GATE: banco, API + painel e o Edge, numa VM Ubuntu.
+# Use pelos scripts desta pasta (instalar-vm.sh e publicar-politica.sh).
+name: onegate-lab
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: onegate
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?rode instalar-vm.sh}
+      POSTGRES_DB: onegate
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onegate -d onegate"]
+      interval: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/api/Dockerfile
+    image: onegate-api:lab
+    environment:
+      ONEGATE_DATABASE_URL: postgres://onegate:${DB_PASSWORD}@db:5432/onegate?sslmode=disable
+      ONEGATE_SECRET_KEY: ${ONEGATE_SECRET_KEY:?rode instalar-vm.sh}
+      ONEGATE_INSECURE_COOKIES: "1" # laboratório sem HTTPS; nunca em produção
+    ports:
+      - "${PAINEL_PORTA:-8080}:8080"
+    volumes:
+      - ./dados/politicas:/politicas
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # O Edge só sobe depois da primeira política publicada (publicar-politica.sh).
+  # Rede do host: o Edge precisa ver o IP real de cada equipamento.
+  edge:
+    profiles: ["edge"]
+    build:
+      context: ../..
+      dockerfile: deploy/edge/Dockerfile
+    image: onegate-edge:lab
+    network_mode: host
+    user: "0:0" # porta 49 no laboratório
+    command:
+      - serve
+      - --policy=/politicas/policy.json
+      - --pubkey=${EDGE_PUBKEY:?rode instalar-vm.sh}
+      - --listen=${EDGE_LISTEN:-10.99.0.10:49}
+      - --events=/var/lib/onegate/events.jsonl
+    volumes:
+      - ./dados/politicas:/politicas:ro
+      - ./dados/edge:/var/lib/onegate
+    restart: unless-stopped
+
+volumes:
+  db:

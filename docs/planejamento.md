@@ -194,3 +194,14 @@ gravação de sessão/bastion, 802.1X/NAC, descoberta, PKI, relatórios, HA da n
   publicado, e mostra regra a regra por que corresponde ou não.
 - **Pendente:** entrega automática da política aos Edges (dia 3), aviso de "política desatualizada" no
   Edge e trava de dois Edges para o anti-reuso do TOTP (dia 9).
+
+### Laboratório (29/10)
+
+- Testes só em laboratório, nunca na produção. Kit em `deploy/lab`: VM Ubuntu com o ONE GATE em
+  containers (banco, API + painel, Edge) fora do EVE-NG, e o EVE-NG em outra VM no VMware, ligadas
+  pelo port group ONEGATE-LAB (10.99.0.0/24).
+- Sem imagens dos fabricantes por enquanto: Arista vEOS-lab (gratuito com cadastro) cobre TACACS+ com
+  autorização de comandos e accounting, como Cisco. MikroTik CHR (gratuito) só fala RADIUS e entra no
+  dia 8. Huawei NE40E e Cisco ficam com configuração pronta para quando houver imagem.
+- O instalador popula o cliente LAB com técnicos, objetos, equipamentos e regras, e publica; o
+  `publicar-politica.sh` entrega a política assinada ao Edge até o canal seguro existir.

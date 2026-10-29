@@ -60,6 +60,11 @@ go run ./cmd/onegate-edge simulate --policy policy.json --pubkey <chave> \
   --user pedro.lima --device bng-01 --from 172.16.50.8 --cmd "display version"
 ```
 
+### Laboratório (EVE-NG no VMware)
+
+Ambiente completo para testar sem tocar na produção: [deploy/lab/README.md](deploy/lab/README.md)
+(instalador da VM, equipamentos virtuais gratuitos, configurações e roteiro de testes).
+
 ### Testes
 
 ```bash

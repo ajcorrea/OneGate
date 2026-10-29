@@ -1,0 +1,6 @@
+.git
+web/node_modules
+web/dist
+deploy/lab/.env
+deploy/lab/dados
+**/*.jsonl
