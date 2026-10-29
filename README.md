@@ -50,6 +50,16 @@ go run ./cmd/onegate-edge serve --policy deploy/edge/policy.example.json --liste
 Configure o equipamento para usar o IP do Edge como servidor TACACS+, com a chave definida em
 `policy.example.json`. Os comandos executados ficam em `accounting.jsonl`.
 
+Com a plataforma no ar, a política sai das regras publicadas no painel (Regras de acesso), assinada:
+
+```bash
+go run ./cmd/onegate-api policy-pubkey                                   # chave pública para os Edges
+go run ./cmd/onegate-api export-policy --customer NSF --out policy.json  # contém segredos (arquivo 600)
+go run ./cmd/onegate-edge serve --policy policy.json --pubkey <chave> --listen :49
+go run ./cmd/onegate-edge simulate --policy policy.json --pubkey <chave> \
+  --user pedro.lima --device bng-01 --from 172.16.50.8 --cmd "display version"
+```
+
 ### Testes
 
 ```bash

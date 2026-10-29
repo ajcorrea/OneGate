@@ -5,11 +5,17 @@ import { CustomerBadge } from "../components/CustomerBadge";
 import { Icon } from "../components/Icon";
 
 const windows = [0, 1800, 3600, 14400, 28800];
+// Fusos do Brasil (os horários das regras AAA seguem o fuso do cliente).
+const timezones = [
+  ["America/Sao_Paulo", "Brasília (SP, RJ, MG, Sul, GO, DF, BA, NE)"], ["America/Manaus", "Amazonas (AM, RR, RO)"],
+  ["America/Cuiaba", "Mato Grosso"], ["America/Campo_Grande", "Mato Grosso do Sul"], ["America/Belem", "Pará e Amapá"],
+  ["America/Rio_Branco", "Acre"], ["America/Noronha", "Fernando de Noronha"], ["UTC", "UTC"],
+];
 const palette = ["#2563EB", "#B45309", "#047857", "#BE185D", "#6D28D9", "#0E7490", "#B91C1C", "#4D7C0F"];
 
 type Draft = Omit<Customer, "id" | "created_at" | "updated_at">;
 
-const empty: Draft = { code: "", name: "", domain: "", segment: "provedor", color: palette[0], mfa: "totp", trust_window_seconds: 3600, active: true };
+const empty: Draft = { code: "", name: "", domain: "", segment: "provedor", color: palette[0], mfa: "totp", trust_window_seconds: 3600, timezone: "America/Sao_Paulo", active: true };
 
 export function Customers() {
   const { can } = useAuth();
@@ -190,6 +196,14 @@ function CustomerDialog({ id, initial, onClose, onSaved }: { id?: string; initia
             <select className="input" value={d.trust_window_seconds} onChange={(e) => set("trust_window_seconds", Number(e.target.value))}>
               {windows.map((w) => <option key={w} value={w}>{formatWindow(w)}</option>)}
             </select>
+          </label>
+          <label className="field">
+            <span>Fuso horário</span>
+            <select className="input" value={d.timezone} onChange={(e) => set("timezone", e.target.value)}>
+              {timezones.some(([z]) => z === d.timezone) ? null : <option value={d.timezone}>{d.timezone}</option>}
+              {timezones.map(([z, l]) => <option key={z} value={z}>{l}</option>)}
+            </select>
+            <small>Usado nos horários das regras de acesso.</small>
           </label>
         </div>
         {id && (

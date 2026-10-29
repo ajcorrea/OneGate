@@ -39,7 +39,9 @@ export function Layout() {
           <Item to="/" icon="grid" label="Visão geral" />
           <span className="nav-section">Acesso à rede (AAA)</span>
           <Soon icon="shield" label="Painel AAA" day="dia 10" />
-          <Soon icon="shield" label="Equipamentos e políticas" day="dia 7" />
+          {canAny("aaa.devices.view") && <Item to="/aaa/equipamentos" icon="router" label="Equipamentos" />}
+          {canAny("aaa.rules.view") && <Item to="/aaa/objetos" icon="box" label="Objetos AAA" />}
+          {canAny("aaa.rules.view") && <Item to="/aaa/regras" icon="shield" label="Regras de acesso" />}
           <span className="nav-section">Servidores (agente)</span>
           <Soon icon="server" label="Servidores" day="dia 5" />
           <Soon icon="terminal" label="Comandos em massa" day="dia 11" />

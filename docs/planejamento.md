@@ -75,7 +75,7 @@ Fora do escopo: autenticação de assinantes (PPPoE/hotspot). Isso continua no R
 
 ## 5. Cronograma do MVP (15 dias)
 
-Situação: dias 1 e 2 concluídos (ver seção 8).
+Situação: dias 1 e 2 concluídos; regras AAA (parte do dia 7) adiantadas (ver seção 8).
 
 | Dia | Entrega |
 |---|---|
@@ -160,3 +160,37 @@ gravação de sessão/bastion, 802.1X/NAC, descoberta, PKI, relatórios, HA da n
   Todos os usuários / Ninguém, Todos os equipamentos / Nenhum, Qualquer IP / Nenhum IP, Nenhum comando,
   Sempre / Nunca, e no MFA "Segue o equipamento". Pré-definido é exclusivo no campo. Regra incompleta
   aparece com aviso e é ignorada pelo Edge e pelo simulador.
+
+### Regras AAA no código (29/10)
+
+- **Motor único** (`internal/policy`, formato 2): o mesmo código decide no Edge, no simulador do painel
+  e no `onegate-edge simulate`. Regras com Quem, Onde, De onde, O que, Quando e MFA; primeira que
+  corresponde decide; sem correspondência, nega. Regra incompleta é ignorada (nunca libera); a
+  publicação recusa regra incompleta. A regra é reavaliada a cada comando (sair do horário corta o
+  próximo comando).
+- **Escopos:** regras globais (equipe ON TELECOM, avaliadas primeiro) e regras do cliente. Regra do
+  cliente só usa técnicos e grupos do domínio do cliente; "Todos os usuários" numa regra do cliente
+  quer dizer os do domínio dele. Regra global só usa técnicos e grupos do domínio global.
+- **Usuário no equipamento:** o técnico pode digitar só `pedro.lima`; o Edge completa com o domínio do
+  cliente e, se não achar, com o global. Sem diferença de maiúsculas.
+- **Objetos** (grupos de técnicos e de equipamentos, redes, perfis de comandos, horários) são globais ou
+  do cliente e **valem na hora**, como técnicos e equipamentos. **Só as regras têm rascunho e
+  publicação versionada.** Objeto usado em regra (rascunho ou última publicação) não pode ser apagado,
+  porque apagá-lo poderia estreitar uma regra de negar e liberar acesso sem publicação.
+  Nome de objeto não pode repetir entre global e cliente (aparecem juntos na política).
+- **Horários** no fuso do cliente (`customers.timezone`, padrão America/Sao_Paulo); janela com fim menor
+  que o início atravessa a meia-noite. MFA padrão e janela de confiança continuam em `customers`.
+- **MFA da regra:** TOTP obrigatório, segue o equipamento (equipamento → grupo principal → cliente) ou
+  sem MFA. Dispensar MFA (regra "sem MFA", equipamento ou cliente desligado) exige a função
+  "Desligar MFA de equipamento".
+- **Equipamentos:** chave compartilhada cifrada (contexto `aaa-device:<id>`), gerada pela plataforma e
+  mostrada uma única vez; rotação auditada; o grupo principal (primeiro) define a herança de MFA.
+- **Política assinada:** Ed25519 com chave derivada da chave mestra (`onegate-api policy-pubkey`). O Edge
+  com `--pubkey` só aceita pacote assinado e recusa versão mais antiga que a atual. Até o canal seguro
+  (dia 3), o pacote sai por `onegate-api export-policy --customer NSF --out arquivo` e contém segredos
+  (hashes, TOTP e chaves dos equipamentos do cliente), gravado com permissão 600. Só entram técnicos
+  ativos do cliente e os globais alcançados por alguma regra global.
+- **Simulador do painel** usa a política sem segredos (chaves e hashes falsos), com o rascunho salvo ou o
+  publicado, e mostra regra a regra por que corresponde ou não.
+- **Pendente:** entrega automática da política aos Edges (dia 3), aviso de "política desatualizada" no
+  Edge e trava de dois Edges para o anti-reuso do TOTP (dia 9).

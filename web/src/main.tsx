@@ -11,6 +11,9 @@ import { Customers } from "./pages/Customers";
 import { People } from "./pages/People";
 import { Permissions } from "./pages/Permissions";
 import { Audit } from "./pages/Audit";
+import { AaaRules } from "./pages/AaaRules";
+import { AaaObjects } from "./pages/AaaObjects";
+import { AaaDevices } from "./pages/AaaDevices";
 
 function App() {
   const { me, loading } = useAuth();
@@ -20,6 +23,9 @@ function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
+        <Route path="aaa/regras" element={<AaaRules />} />
+        <Route path="aaa/objetos" element={<AaaObjects />} />
+        <Route path="aaa/equipamentos" element={<AaaDevices />} />
         <Route path="clientes" element={<Customers />} />
         <Route path="pessoas" element={<People />} />
         <Route path="permissoes" element={<Permissions />} />
