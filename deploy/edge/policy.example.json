@@ -1,88 +1,326 @@
 {
+  "format": 2,
   "version": 1,
+  "global_domain": "onegate.systems",
   "customer": {
     "code": "LAB",
     "name": "Laboratório ON TELECOM",
+    "domain": "lab.ontelecom.io",
     "mfa": "totp",
-    "trust_window_seconds": 14400
+    "trust_window_seconds": 14400,
+    "timezone": "America/Sao_Paulo"
   },
   "device_groups": [
-    { "name": "Núcleo", "mfa": "totp", "trust_window_seconds": 3600 },
-    { "name": "Borda", "mfa": "inherit" },
-    { "name": "Acesso", "mfa": "off" },
-    { "name": "Laboratório", "mfa": "inherit" }
+    {
+      "name": "Núcleo",
+      "mfa": "totp",
+      "trust_window_seconds": 3600
+    },
+    {
+      "name": "Borda",
+      "mfa": "inherit"
+    },
+    {
+      "name": "Acesso",
+      "mfa": "off"
+    },
+    {
+      "name": "Laboratório",
+      "mfa": "inherit"
+    }
   ],
   "devices": [
-    { "name": "teste-local", "address": "127.0.0.1", "group": "Laboratório", "mfa": "inherit", "code_entry": "prompt", "secret": "TROCAR-chave-teste-local" },
-    { "name": "huawei-ne8000-lab", "address": "192.168.88.10", "group": "Núcleo", "vendor": "Huawei NE8000", "mfa": "inherit", "code_entry": "prompt", "secret": "TROCAR-chave-huawei-lab" },
-    { "name": "switches-acesso-lab", "address": "192.168.89.0/24", "group": "Acesso", "vendor": "Datacom", "mfa": "inherit", "secret": "TROCAR-chave-acesso-lab" }
+    {
+      "name": "teste-local",
+      "address": "127.0.0.1",
+      "mfa": "inherit",
+      "code_entry": "prompt",
+      "secret": "TROCAR-chave-teste-local",
+      "groups": [
+        "Laboratório"
+      ]
+    },
+    {
+      "name": "huawei-ne8000-lab",
+      "address": "192.168.88.10",
+      "vendor": "Huawei",
+      "mfa": "inherit",
+      "code_entry": "prompt",
+      "secret": "TROCAR-chave-huawei-lab",
+      "groups": [
+        "Núcleo"
+      ]
+    },
+    {
+      "name": "switches-acesso-lab",
+      "address": "192.168.89.0/24",
+      "vendor": "Datacom",
+      "mfa": "inherit",
+      "secret": "TROCAR-chave-acesso-lab",
+      "groups": [
+        "Acesso"
+      ]
+    }
   ],
   "user_groups": [
-    { "name": "NOC" },
-    { "name": "Suporte N1" },
-    { "name": "Terceirizados", "require_mfa": true, "trust_window_seconds": 1800 },
-    { "name": "Serviço" }
+    {
+      "name": "NOC@onegate.systems"
+    },
+    {
+      "name": "Suporte N1@lab.ontelecom.io"
+    },
+    {
+      "name": "Terceirizados@lab.ontelecom.io"
+    },
+    {
+      "name": "Contas de serviço@lab.ontelecom.io"
+    }
   ],
   "users": [
     {
-      "username": "alexandre.c",
+      "username": "alexandre.c@onegate.systems",
       "name": "Alexandre Correa",
       "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$8UgEOVAV6+wfRXTdBw8R3w$Pa/SqprwQMwQ1jBreMiIA7aq9gf7Vr+L8Y3ZE4R3oiQ",
       "totp_secret": "K63MPMBFHAYKMTFXUDDRW3SZME3JSM27",
-      "groups": ["NOC"]
+      "groups": [
+        "NOC@onegate.systems"
+      ]
     },
     {
-      "username": "suporte.n1",
+      "username": "suporte.n1@lab.ontelecom.io",
       "name": "Suporte nível 1",
       "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$8UgEOVAV6+wfRXTdBw8R3w$Pa/SqprwQMwQ1jBreMiIA7aq9gf7Vr+L8Y3ZE4R3oiQ",
       "totp_secret": "K63MPMBFHAYKMTFXUDDRW3SZME3JSM27",
-      "groups": ["Suporte N1"]
+      "groups": [
+        "Suporte N1@lab.ontelecom.io"
+      ]
     },
     {
-      "username": "backup-ncm",
+      "username": "terceiro@lab.ontelecom.io",
+      "name": "Terceiro Redes Ltda",
+      "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$8UgEOVAV6+wfRXTdBw8R3w$Pa/SqprwQMwQ1jBreMiIA7aq9gf7Vr+L8Y3ZE4R3oiQ",
+      "totp_secret": "K63MPMBFHAYKMTFXUDDRW3SZME3JSM27",
+      "groups": [
+        "Terceirizados@lab.ontelecom.io"
+      ]
+    },
+    {
+      "username": "backup-ncm@lab.ontelecom.io",
       "name": "Conta de serviço de backup",
       "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$8UgEOVAV6+wfRXTdBw8R3w$Pa/SqprwQMwQ1jBreMiIA7aq9gf7Vr+L8Y3ZE4R3oiQ",
-      "groups": ["Serviço"],
-      "service": true,
-      "allowed_sources": ["192.168.88.200"]
+      "groups": [
+        "Contas de serviço@lab.ontelecom.io"
+      ]
+    }
+  ],
+  "networks": [
+    {
+      "name": "Rede NOC ON TELECOM",
+      "cidrs": [
+        "10.20.0.0/16",
+        "127.0.0.1"
+      ]
+    },
+    {
+      "name": "VPN técnicos",
+      "cidrs": [
+        "172.16.50.0/24"
+      ]
+    },
+    {
+      "name": "Servidor de backup",
+      "cidrs": [
+        "192.168.88.200"
+      ]
+    }
+  ],
+  "profiles": [
+    {
+      "name": "Acesso total",
+      "priv_level": 15,
+      "commands": {}
+    },
+    {
+      "name": "Somente leitura",
+      "priv_level": 5,
+      "commands": {
+        "allow": [
+          "display *",
+          "show *",
+          "ping *",
+          "tracert *",
+          "traceroute *",
+          "screen-length *",
+          "quit",
+          "exit"
+        ],
+        "deny": [
+          "display current-configuration *",
+          "show running-config *"
+        ]
+      }
+    },
+    {
+      "name": "Operação sem roteamento",
+      "priv_level": 15,
+      "commands": {
+        "default": "allow",
+        "deny": [
+          "bgp *",
+          "ospf *",
+          "isis *",
+          "route-policy *",
+          "undo bgp *"
+        ]
+      }
+    },
+    {
+      "name": "Backup de configuração",
+      "priv_level": 3,
+      "commands": {
+        "allow": [
+          "screen-length 0 temporary",
+          "display current-configuration",
+          "show running-config",
+          "quit",
+          "exit"
+        ]
+      }
+    }
+  ],
+  "schedules": [
+    {
+      "name": "Comercial",
+      "windows": [
+        {
+          "days": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "start": "08:00",
+          "end": "18:00"
+        }
+      ]
+    },
+    {
+      "name": "Plantão",
+      "windows": [
+        {
+          "days": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "start": "18:00",
+          "end": "08:00"
+        }
+      ]
     }
   ],
   "rules": [
     {
+      "id": "g1",
       "name": "NOC: acesso total",
-      "user_groups": ["NOC"],
+      "scope": "global",
       "action": "allow",
-      "priv_level": 15
+      "who": [
+        "group:NOC@onegate.systems"
+      ],
+      "where": [
+        "all"
+      ],
+      "from": [
+        "net:Rede NOC ON TELECOM",
+        "net:VPN técnicos"
+      ],
+      "what": "profile:Acesso total",
+      "when": [
+        "always"
+      ],
+      "mfa": "totp"
     },
     {
+      "id": "c1",
+      "name": "Terceirizados fora do núcleo",
+      "scope": "customer",
+      "action": "deny",
+      "who": [
+        "group:Terceirizados@lab.ontelecom.io"
+      ],
+      "where": [
+        "group:Núcleo"
+      ],
+      "from": [
+        "all"
+      ]
+    },
+    {
+      "id": "c2",
       "name": "Suporte N1: somente leitura",
-      "user_groups": ["Suporte N1"],
+      "scope": "customer",
       "action": "allow",
-      "priv_level": 5,
-      "commands": {
-        "allow": ["display *", "show *", "ping *", "tracert *", "traceroute *", "screen-length *", "quit", "exit"],
-        "deny": ["display current-configuration *", "show running-config *"]
-      }
+      "who": [
+        "group:Suporte N1@lab.ontelecom.io"
+      ],
+      "where": [
+        "all"
+      ],
+      "from": [
+        "net:VPN técnicos",
+        "net:Rede NOC ON TELECOM"
+      ],
+      "what": "profile:Somente leitura",
+      "when": [
+        "schedule:Comercial"
+      ],
+      "mfa": "device"
     },
     {
-      "name": "Serviço: backup de configuração",
-      "user_groups": ["Serviço"],
+      "id": "c3",
+      "name": "Terceirizados no acesso",
+      "scope": "customer",
       "action": "allow",
-      "priv_level": 3,
-      "commands": {
-        "allow": ["screen-length 0 temporary", "display current-configuration", "show running-config", "quit", "exit"]
-      }
+      "who": [
+        "group:Terceirizados@lab.ontelecom.io"
+      ],
+      "where": [
+        "group:Acesso"
+      ],
+      "from": [
+        "all"
+      ],
+      "what": "profile:Operação sem roteamento",
+      "when": [
+        "schedule:Comercial"
+      ],
+      "mfa": "totp"
     },
     {
-      "name": "Terceirizados: só equipamentos de acesso",
-      "user_groups": ["Terceirizados"],
-      "device_groups": ["Acesso"],
+      "id": "c4",
+      "name": "Backup de configuração",
+      "scope": "customer",
       "action": "allow",
-      "priv_level": 3
-    },
-    {
-      "name": "Padrão: negar",
-      "action": "deny"
+      "who": [
+        "group:Contas de serviço@lab.ontelecom.io"
+      ],
+      "where": [
+        "all"
+      ],
+      "from": [
+        "net:Servidor de backup"
+      ],
+      "what": "profile:Backup de configuração",
+      "when": [
+        "always"
+      ],
+      "mfa": "none"
     }
   ]
 }

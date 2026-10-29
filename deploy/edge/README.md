@@ -30,7 +30,19 @@ A política de exemplo vem com a senha `trocar-esta-senha` e um segredo TOTP pú
 
 Depois de editar a política, recarregue sem derrubar o serviço: `kill -HUP <pid>` (ou `docker kill -s HUP onegate-edge`).
 
+A política (formato 2) segue as regras AAA do painel: **Quem, Onde, De onde, O que, Quando e MFA**.
+A primeira regra que corresponder decide; sem correspondência, nega. Campo obrigatório vazio não libera
+nada: a regra fica incompleta e é ignorada (o `check-policy` mostra um aviso). Para liberar tudo, use o
+objeto `all`. O técnico pode digitar só `suporte.n1`: o Edge completa com o domínio do cliente e, se não
+achar, com o domínio global.
+
 ## 2. Testar sem equipamento
+
+```bash
+# Simulação pura (não usa rede): mostra regra a regra por que corresponde ou não
+go run ./cmd/onegate-edge simulate --policy /etc/onegate/policy.json \
+  --user suporte.n1 --device huawei-ne8000-lab --from 172.16.50.8 --at "2026-10-29 10:00" --cmd "display version"
+```
 
 ```bash
 go run ./cmd/onegate-edge test-login --server 127.0.0.1:49 --secret <CHAVE-teste-local> \

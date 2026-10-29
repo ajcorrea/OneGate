@@ -2,6 +2,7 @@
 //
 //	onegate-edge serve --policy policy.json --listen :49 --events eventos.jsonl
 //	onegate-edge check-policy --policy policy.json
+//	onegate-edge simulate --policy policy.json --user pedro.lima --device bng-01 --from 172.16.50.8 --cmd "display version"
 //	onegate-edge hash-password
 //	onegate-edge totp-secret --user alexandre.c --customer NSF
 //	onegate-edge test-login --server 10.0.0.250:49 --secret CHAVE --user alexandre.c
@@ -15,6 +16,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strings"
@@ -47,6 +49,8 @@ func main() {
 		err = serve(os.Args[2:])
 	case "check-policy":
 		err = checkPolicy(os.Args[2:])
+	case "simulate":
+		err = simulate(os.Args[2:])
 	case "hash-password":
 		err = hashPassword()
 	case "totp-secret":
@@ -71,6 +75,7 @@ func usage() {
 Uso:
   onegate-edge serve         --policy ARQ [--listen :49] [--events ARQ]
   onegate-edge check-policy  --policy ARQ
+  onegate-edge simulate      --policy ARQ --user USUARIO --device NOME|IP --from IP [--at "AAAA-MM-DD HH:MM"] [--cmd COMANDO]
   onegate-edge hash-password
   onegate-edge totp-secret   --user USUARIO [--customer COD]
   onegate-edge test-login    --server HOST:49 --secret CHAVE --user USUARIO [--pap] [--rem-addr IP]
@@ -140,6 +145,62 @@ func checkPolicy(args []string) error {
 		return err
 	}
 	fmt.Printf("Política válida: cliente %s, versão %d\n", eng.Customer().Code, eng.Version())
+	for _, w := range eng.Warnings() {
+		fmt.Println("  aviso:", w)
+	}
+	return nil
+}
+
+// simulate avalia um acesso contra a política sem tocar em equipamento nenhum.
+func simulate(args []string) error {
+	fs := flag.NewFlagSet("simulate", flag.ExitOnError)
+	policyPath := fs.String("policy", "/etc/onegate/policy.json", "arquivo da política")
+	user := fs.String("user", "", "usuário (com ou sem domínio)")
+	device := fs.String("device", "", "nome ou IP do equipamento")
+	from := fs.String("from", "", "IP de origem do técnico")
+	at := fs.String("at", "", "data e hora no fuso do cliente (AAAA-MM-DD HH:MM); padrão: agora")
+	cmd := fs.String("cmd", "", "comando a autorizar (opcional)")
+	_ = fs.Parse(args)
+	eng, err := policy.Load(*policyPath)
+	if err != nil {
+		return err
+	}
+	d, ok := eng.DeviceByName(*device)
+	if !ok {
+		if ip, perr := netip.ParseAddr(*device); perr == nil {
+			d, ok = eng.DeviceFor(ip)
+		}
+	}
+	if !ok {
+		return fmt.Errorf("equipamento %q não está na política", *device)
+	}
+	when := time.Now()
+	if *at != "" {
+		when, err = time.ParseInLocation("2006-01-02 15:04", *at, eng.Location())
+		if err != nil {
+			return fmt.Errorf("--at: use AAAA-MM-DD HH:MM")
+		}
+	}
+	req := policy.Request{User: *user, Device: d, Source: *from, Time: when}
+	res := eng.Evaluate(req)
+	if *cmd != "" && res.Allowed {
+		res = eng.AuthorizeCommand(req, *cmd)
+	}
+	for _, st := range res.Trail {
+		fmt.Printf("  #%-3d %-10s %-40s %s\n", st.Num, st.Status, st.Name, st.Note)
+	}
+	verdict := "NEGADO"
+	if res.Allowed {
+		verdict = "PERMITIDO"
+	}
+	fmt.Printf("%s: %s\n", verdict, res.Reason)
+	if res.Allowed {
+		mfa := "não exigido"
+		if res.MFA.Required {
+			mfa = "TOTP (" + res.MFA.Reason + ")"
+		}
+		fmt.Printf("  priv-lvl %d · MFA %s\n", res.PrivLevel, mfa)
+	}
 	return nil
 }
 

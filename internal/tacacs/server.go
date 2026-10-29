@@ -165,29 +165,30 @@ func (h *deviceHandler) HandleAuthenStart(ctx context.Context, a *tacplus.Authen
 	ev.User = user
 
 	now := h.s.now()
-	limKey := user + "\x00" + a.RemAddr
+	limKey := strings.ToLower(user) + "\x00" + a.RemAddr
 	if h.s.limiter.blocked(limKey, now) {
 		return fail("bloqueado temporariamente por excesso de falhas")
 	}
-	u, ok := eng.User(user)
+	u, ok := eng.ResolveUser(user)
 	if !ok {
 		passhash.VerifyDummy(pass)
 		h.s.limiter.fail(limKey, now)
 		return fail("usuário desconhecido")
 	}
+	user = u.Username
+	ev.User = user
 	if u.Disabled {
 		return fail("usuário desativado")
 	}
-	if !eng.SourceAllowed(user, a.RemAddr) {
-		return fail("origem não permitida para este usuário")
-	}
-	sd := eng.AuthorizeSession(user, dev)
+	sd := eng.Evaluate(policy.Request{User: user, Device: dev, Source: a.RemAddr, Time: now})
 	ev.Rule = sd.Rule
 	if !sd.Allowed {
+		// Mesmo negado pela regra, gasta o tempo da verificação de senha: não revela se o usuário existe.
+		passhash.VerifyDummy(pass)
 		return fail(sd.Reason)
 	}
 
-	mfa := eng.MFAFor(user, dev)
+	mfa := sd.MFA
 	entry := mfa.Entry
 	if !interactive {
 		entry = policy.EntryAppend // PAP não permite segundo prompt
@@ -319,16 +320,15 @@ func (h *deviceHandler) HandleAuthorRequest(ctx context.Context, a *tacplus.Auth
 	if dev == nil {
 		return fail("equipamento removido da política", "")
 	}
-	u, ok := eng.User(a.User)
+	u, ok := eng.ResolveUser(a.User)
 	if !ok || u.Disabled {
 		return fail("usuário desconhecido ou desativado", "")
 	}
-	if !eng.SourceAllowed(a.User, a.RemAddr) {
-		return fail("origem não permitida para este usuário", "")
-	}
+	ev.User = u.Username
+	req := policy.Request{User: u.Username, Device: dev, Source: a.RemAddr, Time: h.s.now()}
 
 	if cmd == "" {
-		d := eng.AuthorizeSession(a.User, dev)
+		d := eng.Evaluate(req)
 		if !d.Allowed {
 			return fail(d.Reason, d.Rule)
 		}
@@ -341,7 +341,7 @@ func (h *deviceHandler) HandleAuthorRequest(ctx context.Context, a *tacplus.Auth
 		return resp
 	}
 
-	d := eng.AuthorizeCommand(a.User, dev, cmd)
+	d := eng.AuthorizeCommand(req, cmd)
 	if !d.Allowed {
 		return fail(d.Reason, d.Rule)
 	}

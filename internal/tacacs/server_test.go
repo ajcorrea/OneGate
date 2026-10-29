@@ -47,19 +47,28 @@ func newFixture(t *testing.T, mfa policy.MFAMode, entry policy.CodeEntry, device
 	}
 	window := 3600
 	p := &policy.Policy{
+		Format:       policy.FormatVersion,
 		Version:      7,
-		Customer:     policy.Customer{Code: "NSF", Name: "NetSul Fibra", MFA: policy.MFAOff},
+		GlobalDomain: "onegate.systems",
+		Customer:     policy.Customer{Code: "NSF", Name: "NetSul Fibra", Domain: "netsulfibra.com.br", MFA: policy.MFAOff},
 		DeviceGroups: []policy.DeviceGroup{{Name: "Núcleo", MFA: mfa, TrustWindowSeconds: &window}},
-		Devices:      []policy.Device{{Name: "bng-01", Address: deviceAddr, Group: "Núcleo", MFA: policy.MFAInherit, CodeEntry: entry, Secret: testSecret}},
-		UserGroups:   []policy.UserGroup{{Name: "NOC"}, {Name: "Suporte N1"}},
+		Devices: []policy.Device{{Name: "bng-01", Address: deviceAddr, Groups: []string{"Núcleo"}, Vendor: "Huawei",
+			MFA: policy.MFAInherit, CodeEntry: entry, Secret: testSecret}},
+		UserGroups: []policy.UserGroup{{Name: "NOC@onegate.systems"}, {Name: "Suporte N1@netsulfibra.com.br"}},
 		Users: []policy.User{
-			{Username: "alexandre.c", PasswordHash: h, TOTPSecret: totpSecret, Groups: []string{"NOC"}},
-			{Username: "suporte.n1", PasswordHash: h, TOTPSecret: totpSecret, Groups: []string{"Suporte N1"}},
+			{Username: "alexandre.c@onegate.systems", PasswordHash: h, TOTPSecret: totpSecret, Groups: []string{"NOC@onegate.systems"}},
+			{Username: "suporte.n1@netsulfibra.com.br", PasswordHash: h, TOTPSecret: totpSecret, Groups: []string{"Suporte N1@netsulfibra.com.br"}},
+		},
+		Networks: []policy.Network{{Name: "Rede NOC", CIDRs: []string{"10.20.0.0/16"}}},
+		Profiles: []policy.Profile{
+			{Name: "Acesso total", PrivLevel: 15},
+			{Name: "Somente leitura", PrivLevel: 5, Commands: policy.CommandPolicy{Allow: []string{"display *"}}},
 		},
 		Rules: []policy.Rule{
-			{Name: "NOC total", UserGroups: []string{"NOC"}, Action: policy.Allow, PrivLevel: 15},
-			{Name: "Suporte leitura", UserGroups: []string{"Suporte N1"}, Action: policy.Allow, PrivLevel: 5,
-				Commands: policy.CommandPolicy{Allow: []string{"display *"}}},
+			{Name: "NOC total", Scope: policy.ScopeGlobal, Action: policy.Allow, Who: []string{"group:NOC@onegate.systems"},
+				Where: []string{policy.RefAll}, From: []string{policy.RefAll}, What: "profile:Acesso total"},
+			{Name: "Suporte leitura", Scope: policy.ScopeCustomer, Action: policy.Allow, Who: []string{"group:Suporte N1@netsulfibra.com.br"},
+				Where: []string{"group:Núcleo"}, From: []string{"net:Rede NOC"}, What: "profile:Somente leitura"},
 		},
 	}
 	eng, err := policy.Compile(p)
@@ -283,6 +292,31 @@ func TestAuthorization(t *testing.T) {
 	}
 	if r := author("alexandre.c", "service=shell", "cmd=system-view"); r.Status != tacplus.AuthorStatusPassAdd {
 		t.Fatalf("NOC deveria poder tudo: %+v", r)
+	}
+}
+
+func TestRuleSourceAndDomain(t *testing.T) {
+	f := newFixture(t, policy.MFAOff, policy.EntryPrompt, "127.0.0.1")
+	// Usuário curto e completo levam à mesma conta; o evento grava o nome completo.
+	if st, _ := f.asciiLogin("suporte.n1", "10.20.1.5", password); st != tacplus.AuthenStatusPass {
+		t.Fatalf("login curto: %+v", f.lastEvent())
+	}
+	if ev := f.lastEvent(); ev.User != "suporte.n1@netsulfibra.com.br" || ev.Rule != "Suporte leitura" || ev.Priv != 5 {
+		t.Fatalf("evento: %+v", ev)
+	}
+	if st, _ := f.asciiLogin("Suporte.N1@NetSulFibra.com.br", "10.20.1.5", password); st != tacplus.AuthenStatusPass {
+		t.Fatal("login com domínio deveria passar")
+	}
+	// Fora da faixa da regra: nenhuma regra corresponde e nega, sem pedir MFA.
+	if st, _ := f.asciiLogin("suporte.n1", "192.0.2.10", password); st != tacplus.AuthenStatusFail {
+		t.Fatal("origem fora da regra deveria ser negada")
+	}
+	if r := f.lastEvent().Reason; !strings.Contains(r, "nenhuma regra") {
+		t.Fatalf("motivo: %q", r)
+	}
+	// Domínio de outro cliente não resolve.
+	if st, _ := f.asciiLogin("suporte.n1@valeconecta.com.br", "10.20.1.5", password); st != tacplus.AuthenStatusFail {
+		t.Fatal("domínio de outro cliente deveria falhar")
 	}
 }
 
