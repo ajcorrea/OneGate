@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "customer": {
+    "code": "LAB",
+    "name": "Laboratório ON TELECOM",
+    "mfa": "totp",
+    "trust_window_seconds": 14400
+  },
+  "device_groups": [
+    { "name": "Núcleo", "mfa": "totp", "trust_window_seconds": 3600 },
+    { "name": "Borda", "mfa": "inherit" },
+    { "name": "Acesso", "mfa": "off" },
+    { "name": "Laboratório", "mfa": "inherit" }
+  ],
+  "devices": [
+    { "name": "teste-local", "address": "127.0.0.1", "group": "Laboratório", "mfa": "inherit", "code_entry": "prompt", "secret": "TROCAR-chave-teste-local" },
+    { "name": "huawei-ne8000-lab", "address": "192.168.88.10", "group": "Núcleo", "vendor": "Huawei NE8000", "mfa": "inherit", "code_entry": "prompt", "secret": "TROCAR-chave-huawei-lab" },
+    { "name": "switches-acesso-lab", "address": "192.168.89.0/24", "group": "Acesso", "vendor": "Datacom", "mfa": "inherit", "secret": "TROCAR-chave-acesso-lab" }
+  ],
+  "user_groups": [
+    { "name": "NOC" },
+    { "name": "Suporte N1" },
+    { "name": "Terceirizados", "require_mfa": true, "trust_window_seconds": 1800 },
+    { "name": "Serviço" }
+  ],
+  "users": [
+    {
+      "username": "alexandre.c",
+      "name": "Alexandre Correa",
+      "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$8UgEOVAV6+wfRXTdBw8R3w$Pa/SqprwQMwQ1jBreMiIA7aq9gf7Vr+L8Y3ZE4R3oiQ",
+      "totp_secret": "K63MPMBFHAYKMTFXUDDRW3SZME3JSM27",
+      "groups": ["NOC"]
+    },
+    {
+      "username": "suporte.n1",
+      "name": "Suporte nível 1",
+      "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$8UgEOVAV6+wfRXTdBw8R3w$Pa/SqprwQMwQ1jBreMiIA7aq9gf7Vr+L8Y3ZE4R3oiQ",
+      "totp_secret": "K63MPMBFHAYKMTFXUDDRW3SZME3JSM27",
+      "groups": ["Suporte N1"]
+    },
+    {
+      "username": "backup-ncm",
+      "name": "Conta de serviço de backup",
+      "password_hash": "$argon2id$v=19$m=19456,t=2,p=1$8UgEOVAV6+wfRXTdBw8R3w$Pa/SqprwQMwQ1jBreMiIA7aq9gf7Vr+L8Y3ZE4R3oiQ",
+      "groups": ["Serviço"],
+      "service": true,
+      "allowed_sources": ["192.168.88.200"]
+    }
+  ],
+  "rules": [
+    {
+      "name": "NOC: acesso total",
+      "user_groups": ["NOC"],
+      "action": "allow",
+      "priv_level": 15
+    },
+    {
+      "name": "Suporte N1: somente leitura",
+      "user_groups": ["Suporte N1"],
+      "action": "allow",
+      "priv_level": 5,
+      "commands": {
+        "allow": ["display *", "show *", "ping *", "tracert *", "traceroute *", "screen-length *", "quit", "exit"],
+        "deny": ["display current-configuration *", "show running-config *"]
+      }
+    },
+    {
+      "name": "Serviço: backup de configuração",
+      "user_groups": ["Serviço"],
+      "action": "allow",
+      "priv_level": 3,
+      "commands": {
+        "allow": ["screen-length 0 temporary", "display current-configuration", "show running-config", "quit", "exit"]
+      }
+    },
+    {
+      "name": "Terceirizados: só equipamentos de acesso",
+      "user_groups": ["Terceirizados"],
+      "device_groups": ["Acesso"],
+      "action": "allow",
+      "priv_level": 3
+    },
+    {
+      "name": "Padrão: negar",
+      "action": "deny"
+    }
+  ]
+}

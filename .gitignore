@@ -1,0 +1,19 @@
+# Binários e saídas
+/bin/
+/dist/
+*.test
+*.out
+
+# Dados locais do Edge
+events.jsonl
+*.jsonl
+
+# Web
+web/node_modules/
+web/dist/
+
+# Ambiente
+.env
+.env.*
+!.env.example
+.DS_Store
