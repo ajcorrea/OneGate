@@ -13,7 +13,7 @@
 //
 //	onegate-api                       inicia a API (aplica as migrações)
 //	onegate-api migrate               só aplica as migrações
-//	onegate-api bootstrap-admin --email E --name N
+//	onegate-api bootstrap-admin --login alexandre --name "Nome" [--email contato@exemplo.com]
 package main
 
 import (
@@ -56,7 +56,7 @@ func main() {
 	case "version":
 		fmt.Println("onegate-api", version)
 	default:
-		fmt.Fprintln(os.Stderr, "uso: onegate-api [serve | migrate | bootstrap-admin --email E --name N | version]")
+		fmt.Fprintln(os.Stderr, "uso: onegate-api [serve | migrate | bootstrap-admin --login L --name N [--email E] | version]")
 		os.Exit(2)
 	}
 	if err != nil {
@@ -86,6 +86,10 @@ func open(ctx context.Context) (*platform.DB, *secretbox.Box, error) {
 		return nil, nil, err
 	}
 	if err := db.Migrate(ctx); err != nil {
+		db.Close()
+		return nil, nil, err
+	}
+	if err := db.EnsureBuiltins(ctx); err != nil {
 		db.Close()
 		return nil, nil, err
 	}
@@ -154,11 +158,12 @@ func migrate() error {
 
 func bootstrapAdmin(args []string) error {
 	fs := flag.NewFlagSet("bootstrap-admin", flag.ExitOnError)
-	email := fs.String("email", "", "e-mail")
+	login := fs.String("login", "", "usuário (antes do @"+platform.GlobalDomain+")")
 	name := fs.String("name", "", "nome completo")
+	email := fs.String("email", "", "e-mail de contato (opcional)")
 	_ = fs.Parse(args)
-	if *email == "" || *name == "" {
-		return errors.New("informe --email e --name")
+	if *login == "" || *name == "" {
+		return errors.New("informe --login e --name")
 	}
 	ctx := context.Background()
 	db, box, err := open(ctx)
@@ -172,10 +177,10 @@ func bootstrapAdmin(args []string) error {
 		return err
 	}
 	s := platform.NewServer(db, box, slog.Default())
-	if _, err := s.CreatePanelUser(ctx, platform.System, platform.NewPanelUser{Email: *email, Name: *name, Password: pw, IsAdmin: true}); err != nil {
+	if _, err := s.CreatePanelUser(ctx, platform.System, platform.NewPanelUser{Login: *login, Email: *email, Name: *name, Password: pw, TypeKey: "global_admin"}); err != nil {
 		return err
 	}
-	fmt.Printf("Administrador %s criado. No primeiro login o painel mostra o QR Code para cadastrar o app autenticador.\n", strings.ToLower(*email))
+	fmt.Printf("Admin global %s@%s criado. No primeiro login o painel mostra o QR Code para cadastrar o app autenticador.\n", strings.ToLower(*login), platform.GlobalDomain)
 	return nil
 }
 

@@ -29,8 +29,8 @@ export ONEGATE_DATABASE_URL="postgres://onegate:onegate@localhost:5432/onegate?s
 export ONEGATE_SECRET_KEY="$(openssl rand -base64 32)"   # guarde: sem ela os TOTP não decifram
 export ONEGATE_INSECURE_COOKIES=1                         # só em desenvolvimento sem HTTPS
 
-# Primeiro administrador (o TOTP é cadastrado por QR Code no primeiro login)
-go run ./cmd/onegate-api bootstrap-admin --email voce@ontelecom.io --name "Seu Nome" --username seu.usuario
+# Primeiro Admin global (login seu.usuario@onegate.systems; o TOTP é cadastrado por QR Code no primeiro login)
+go run ./cmd/onegate-api bootstrap-admin --login seu.usuario --name "Seu Nome" --email contato@exemplo.com
 
 # API (aplica as migrações ao iniciar)
 go run ./cmd/onegate-api

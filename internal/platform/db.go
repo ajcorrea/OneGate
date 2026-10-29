@@ -100,8 +100,9 @@ func (db *DB) Migrate(ctx context.Context) error {
 // Actor identifica quem está agindo numa transação.
 type Actor struct {
 	UserID  string
-	Label   string // nome legível para a auditoria (ex.: e-mail ou "sistema")
-	IsAdmin bool
+	Label   string // nome legível para a auditoria (ex.: login ou "sistema")
+	IsAdmin bool   // Admin global
+	Global  bool   // enxerga todos os clientes
 	IP      string
 }
 
@@ -115,17 +116,21 @@ func (db *DB) WithActor(ctx context.Context, a Actor, fn func(tx pgx.Tx) error) 
 		return err
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
-	admin := "false"
-	if a.IsAdmin {
-		admin = "true"
-	}
-	if _, err := tx.Exec(ctx, `SELECT set_config('onegate.user_id', $1, true), set_config('onegate.is_admin', $2, true)`, a.UserID, admin); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT set_config('onegate.user_id', $1, true), set_config('onegate.is_admin', $2, true), set_config('onegate.global', $3, true)`,
+		a.UserID, boolStr(a.IsAdmin), boolStr(a.IsAdmin || a.Global)); err != nil {
 		return err
 	}
 	if err := fn(tx); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
 }
 
 // ErrNotFound indica que o registro não existe (ou não é visível para o ator).

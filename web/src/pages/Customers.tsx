@@ -9,10 +9,11 @@ const palette = ["#2563EB", "#B45309", "#047857", "#BE185D", "#6D28D9", "#0E7490
 
 type Draft = Omit<Customer, "id" | "created_at" | "updated_at">;
 
-const empty: Draft = { code: "", name: "", segment: "provedor", color: palette[0], mfa: "totp", trust_window_seconds: 3600, active: true };
+const empty: Draft = { code: "", name: "", domain: "", segment: "provedor", color: palette[0], mfa: "totp", trust_window_seconds: 3600, active: true };
 
 export function Customers() {
-  const { me } = useAuth();
+  const { can } = useAuth();
+  const me = { is_admin: can("admin.customers.edit") };
   const [list, setList] = useState<Customer[] | null>(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<{ id?: string; draft: Draft } | null>(null);
@@ -54,6 +55,7 @@ export function Customers() {
             <thead>
               <tr>
                 <th>Cliente</th>
+                <th>Domínio</th>
                 <th>Segmento</th>
                 <th>MFA padrão</th>
                 <th>Janela de confiança</th>
@@ -72,6 +74,7 @@ export function Customers() {
                       <CustomerBadge code={c.code} name={c.name} color={c.color} />
                     )}
                   </td>
+                  <td className="mono" style={{ fontSize: 12.5 }}>@{c.domain}</td>
                   <td className="muted">{segments[c.segment] ?? c.segment}</td>
                   <td>{c.mfa === "totp" ? <span className="pill pill-info">TOTP</span> : <span className="pill pill-warn">Desligado</span>}</td>
                   <td className="muted">{c.mfa === "totp" ? formatWindow(c.trust_window_seconds) : "—"}</td>
@@ -80,7 +83,7 @@ export function Customers() {
               ))}
               {list?.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="muted">Nenhum cliente {me?.is_admin ? "cadastrado ainda." : "liberado para você."}</td>
+                  <td colSpan={6} className="muted">Nenhum cliente {me?.is_admin ? "cadastrado ainda." : "liberado para você."}</td>
                 </tr>
               )}
             </tbody>
@@ -114,7 +117,10 @@ function CustomerDialog({ id, initial, onClose, onSaved }: { id?: string; initia
     setBusy(true);
     setError("");
     try {
-      if (id) await api.patch(`/api/customers/${id}`, d);
+      if (id) {
+        const { domain: _d, ...rest } = d;
+        await api.patch(`/api/customers/${id}`, rest);
+      }
       else await api.post("/api/customers", d);
       onSaved();
     } catch (err) {
@@ -146,6 +152,14 @@ function CustomerDialog({ id, initial, onClose, onSaved }: { id?: string; initia
           <label className="field">
             <span>Nome</span>
             <input className="input" required value={d.name} onChange={(e) => set("name", e.target.value)} />
+          </label>
+          <label className="field">
+            <span>Domínio</span>
+            <span style={{ display: "flex" }}>
+              <span className="mono" style={{ display: "flex", alignItems: "center", padding: "0 10px", border: "1px solid var(--border)", borderRight: 0, borderRadius: "10px 0 0 10px", background: "var(--sunk)", color: "var(--muted)" }}>@</span>
+              <input className="input mono" required disabled={!!id} placeholder="netsulfibra.com.br" value={d.domain} onChange={(e) => set("domain", e.target.value.toLowerCase())} style={{ borderTopLeftRadius: 0, borderBottomLeftRadius: 0 }} />
+            </span>
+            <small>{id ? "Não pode ser trocado: faz parte do login das pessoas." : "Logins deste cliente: usuario@dominio."}</small>
           </label>
           <label className="field">
             <span>Segmento</span>

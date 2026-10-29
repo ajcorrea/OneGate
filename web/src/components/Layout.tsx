@@ -25,7 +25,7 @@ function Soon({ icon, label, day }: { icon: string; label: string; day: string }
 }
 
 export function Layout() {
-  const { me, logout } = useAuth();
+  const { me, logout, canAny } = useAuth();
   const { dark, toggle } = useTheme();
   if (!me) return null;
   const initials = me.name.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
@@ -44,9 +44,10 @@ export function Layout() {
           <Soon icon="server" label="Servidores" day="dia 5" />
           <Soon icon="terminal" label="Comandos em massa" day="dia 11" />
           <span className="nav-section">Administração</span>
-          <Item to="/clientes" icon="building" label="Clientes" />
-          {me.is_admin && <Item to="/pessoas" icon="users" label="Pessoas e acessos" />}
-          <Item to="/auditoria" icon="file" label="Auditoria" />
+          {canAny("admin.customers.view") && <Item to="/clientes" icon="building" label="Clientes" />}
+          {canAny("admin.people.view") && <Item to="/pessoas" icon="users" label="Pessoas e acessos" />}
+          {canAny("admin.people.view") && <Item to="/permissoes" icon="key" label="Permissões" />}
+          {canAny("admin.audit.view") && <Item to="/auditoria" icon="file" label="Auditoria" />}
         </nav>
       </aside>
 
@@ -68,7 +69,7 @@ export function Layout() {
             </span>
             <span style={{ display: "flex", flexDirection: "column" }}>
               <strong style={{ fontSize: 13 }}>{me.name}</strong>
-              <span className="muted" style={{ fontSize: 11 }}>{me.is_admin ? "Administrador" : "Equipe"} · {me.email}</span>
+              <span className="muted" style={{ fontSize: 11 }}>{me.is_admin ? "Admin global" : me.global ? "Acesso global" : "Acesso por cliente"} · {me.login}</span>
             </span>
           </div>
           <button type="button" className="btn btn-icon" onClick={() => void logout()} aria-label="Sair">

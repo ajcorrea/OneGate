@@ -23,7 +23,7 @@ export function Overview() {
       <div className="page-head">
         <div>
           <h1>Visão geral</h1>
-          <p>Olá, {me?.name.split(" ")[0]}. {me?.is_admin ? "Você vê todos os clientes." : `Você tem acesso a ${customers.length} cliente(s).`}</p>
+          <p>Olá, {me?.name.split(" ")[0]}. {me?.is_admin ? "Você é Admin global." : me?.global ? "Você tem acesso global." : `Você tem acesso a ${customers.length} cliente(s).`}</p>
         </div>
       </div>
 

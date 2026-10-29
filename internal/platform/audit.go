@@ -52,11 +52,24 @@ func (s *Server) handleListAudit(w http.ResponseWriter, r *http.Request) {
 	customer := r.URL.Query().Get("customer_id")
 	var out []AuditEntry
 	err := s.DB.WithActor(r.Context(), sess.actor(r), func(tx pgx.Tx) error {
+		// Só eventos de clientes onde a pessoa tem "Auditoria: ver"; eventos da plataforma, só com a função na plataforma.
+		ids, err := s.visibleCustomerIDs(r, tx)
+		if err != nil {
+			return err
+		}
+		allowed := []string{}
+		for _, id := range ids {
+			if sess.can("admin.audit.view", id) {
+				allowed = append(allowed, id)
+			}
+		}
+		platform := sess.can("admin.audit.view", "")
 		rows, err := tx.Query(r.Context(), `
 			SELECT a.id, a.at, a.actor_label, a.customer_id::text, c.code, a.action, a.target_type, a.target_id, a.ip, a.details
 			FROM audit_log a LEFT JOIN customers c ON c.id = a.customer_id
 			WHERE ($1 = '' OR a.customer_id::text = $1)
-			ORDER BY a.at DESC, a.id DESC LIMIT $2`, customer, limit)
+			  AND ((a.customer_id IS NULL AND $3) OR a.customer_id::text = ANY($4))
+			ORDER BY a.at DESC, a.id DESC LIMIT $2`, customer, limit, platform, allowed)
 		if err != nil {
 			return err
 		}

@@ -16,6 +16,7 @@ type Customer struct {
 	ID                 string    `json:"id"`
 	Code               string    `json:"code"`
 	Name               string    `json:"name"`
+	Domain             string    `json:"domain"`
 	Segment            string    `json:"segment"`
 	Color              string    `json:"color"`
 	MFA                string    `json:"mfa"`
@@ -25,11 +26,11 @@ type Customer struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 }
 
-const customerCols = `id::text, code, name, segment, color, mfa, trust_window_seconds, active, created_at, updated_at`
+const customerCols = `id::text, code, name, domain, segment, color, mfa, trust_window_seconds, active, created_at, updated_at`
 
 func scanCustomer(row pgx.Row) (Customer, error) {
 	var c Customer
-	err := row.Scan(&c.ID, &c.Code, &c.Name, &c.Segment, &c.Color, &c.MFA, &c.TrustWindowSeconds, &c.Active, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.Code, &c.Name, &c.Domain, &c.Segment, &c.Color, &c.MFA, &c.TrustWindowSeconds, &c.Active, &c.CreatedAt, &c.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return c, ErrNotFound
 	}
@@ -37,9 +38,10 @@ func scanCustomer(row pgx.Row) (Customer, error) {
 }
 
 var (
-	codeRe  = regexp.MustCompile(`^[A-Z0-9]{3}$`)
-	colorRe = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
-	uuidRe  = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	codeRe   = regexp.MustCompile(`^[A-Z0-9]{3}$`)
+	colorRe  = regexp.MustCompile(`^#[0-9A-Fa-f]{6}$`)
+	domainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+	uuidRe   = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 )
 
 // Segmentos aceitos. "outro" cobre qualquer segmento não listado.
@@ -92,6 +94,7 @@ func (s *Server) handleGetCustomer(w http.ResponseWriter, r *http.Request) {
 type customerInput struct {
 	Code               *string `json:"code"`
 	Name               *string `json:"name"`
+	Domain             *string `json:"domain"`
 	Segment            *string `json:"segment"`
 	Color              *string `json:"color"`
 	MFA                *string `json:"mfa"`
@@ -121,6 +124,19 @@ func (in customerInput) apply(c *Customer) (map[string]any, error) {
 			changes["name"] = v
 		}
 		c.Name = v
+	}
+	if in.Domain != nil {
+		v := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(*in.Domain), "@")))
+		if !domainRe.MatchString(v) {
+			return nil, validationError("Domínio inválido (ex.: netsulfibra.com.br).")
+		}
+		if v == GlobalDomain {
+			return nil, validationError("O domínio " + GlobalDomain + " é reservado para os acessos globais.")
+		}
+		if c.Domain != "" && v != c.Domain {
+			return nil, validationError("O domínio do cliente não pode ser trocado depois de criado: ele faz parte do login das pessoas.")
+		}
+		c.Domain = v
 	}
 	if in.Segment != nil {
 		v := strings.ToLower(strings.TrimSpace(*in.Segment))
@@ -183,8 +199,8 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	if in.Code == nil || in.Name == nil || in.Color == nil {
-		writeError(w, http.StatusBadRequest, "Código, nome e cor são obrigatórios.")
+	if in.Code == nil || in.Name == nil || in.Color == nil || in.Domain == nil {
+		writeError(w, http.StatusBadRequest, "Código, nome, domínio e cor são obrigatórios.")
 		return
 	}
 	c := Customer{Segment: "provedor", MFA: "totp", TrustWindowSeconds: 3600, Active: true}
@@ -195,17 +211,17 @@ func (s *Server) handleCreateCustomer(w http.ResponseWriter, r *http.Request) {
 	err := s.DB.WithActor(r.Context(), sess.actor(r), func(tx pgx.Tx) error {
 		var err error
 		c, err = scanCustomer(tx.QueryRow(r.Context(), `
-			INSERT INTO customers (code, name, segment, color, mfa, trust_window_seconds, active)
-			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+customerCols,
-			c.Code, c.Name, c.Segment, c.Color, c.MFA, c.TrustWindowSeconds, c.Active))
+			INSERT INTO customers (code, name, domain, segment, color, mfa, trust_window_seconds, active)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING `+customerCols,
+			c.Code, c.Name, c.Domain, c.Segment, c.Color, c.MFA, c.TrustWindowSeconds, c.Active))
 		if uniqueViolation(err) {
-			return conflictError("Já existe um cliente com o código " + c.Code + ".")
+			return conflictError("Já existe um cliente com o código " + c.Code + " ou o domínio " + c.Domain + ".")
 		}
 		if err != nil {
 			return err
 		}
 		return audit(r.Context(), tx, sess.actor(r), &c.ID, "cliente.criado", "customer", c.ID,
-			map[string]any{"code": c.Code, "name": c.Name, "segment": c.Segment, "mfa": c.MFA})
+			map[string]any{"code": c.Code, "name": c.Name, "domain": c.Domain, "segment": c.Segment, "mfa": c.MFA})
 	})
 	if err != nil {
 		s.serverError(w, r, err)

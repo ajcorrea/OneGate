@@ -29,28 +29,57 @@ export const api = {
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
 };
 
-export type Module = "aaa" | "servers" | "commands" | "audit";
-export type Level = "read" | "write";
-
-export const moduleLabels: Record<Module, string> = {
-  aaa: "Acesso à rede (AAA)",
-  servers: "Servidores",
-  commands: "Comandos em massa",
-  audit: "Auditoria",
-};
+export const GLOBAL_DOMAIN = "onegate.systems";
 
 export interface Me {
   id: string;
-  email: string;
+  login: string;
   name: string;
+  domain: string;
   is_admin: boolean;
-  customers: { customer_id: string; code: string; name: string; color: string; modules: Partial<Record<Module, Level>> }[];
+  global: boolean;
+  platform: string[];
+  customers: { customer_id: string; code: string; name: string; color: string; domain: string; functions: string[] }[];
+}
+
+export interface CatalogMenu {
+  id: string;
+  label: string;
+  functions: { id: string; label: string; platform?: boolean }[];
+}
+
+export interface AccessType {
+  id: string;
+  key: string | null;
+  name: string;
+  description: string;
+  scope: "global" | "customer";
+  builtin: boolean;
+  full_access: boolean;
+  grants: string[];
+}
+
+export interface PanelGroup {
+  id: string;
+  name: string;
+  customer_id: string | null;
+  base_type_id: string;
+  description: string;
+  overrides: Record<string, "allow" | "deny">;
+  members: string[];
+}
+
+export interface Decision {
+  allowed: boolean;
+  reason: string;
+  chain: { level: string; value: string }[];
 }
 
 export interface Customer {
   id: string;
   code: string;
   name: string;
+  domain: string;
   segment: string;
   color: string;
   mfa: "off" | "totp";
@@ -60,12 +89,6 @@ export interface Customer {
   updated_at: string;
 }
 
-export interface Permission {
-  customer_id: string;
-  module: Module;
-  level: Level;
-}
-
 export interface Person {
   id: string;
   name: string;
@@ -73,20 +96,23 @@ export interface Person {
   phone: string | null;
   active: boolean;
   created_at: string;
+  customer_id: string | null;
+  domain: string;
   panel: {
-    login_email: string;
-    is_admin: boolean;
+    login: string;
     active: boolean;
     totp_enabled: boolean;
     last_login_at: string | null;
-    permissions: Permission[];
+    access_type_id: string | null;
+    group_ids: string[];
+    customer_ids: string[];
+    overrides: Record<string, "allow" | "deny">;
   } | null;
   device: {
     username: string;
     active: boolean;
     totp_configured: boolean;
     password_changed_at: string;
-    customers: string[];
   } | null;
 }
 
@@ -114,14 +140,6 @@ export const segments: Record<string, string> = {
   varejo: "Varejo",
   outro: "Outro",
 };
-
-/** Papéis prontos: atalhos para preencher a matriz de permissões de um cliente. */
-export const presets: { id: string; label: string; modules: Partial<Record<Module, Level>> }[] = [
-  { id: "none", label: "Sem acesso", modules: {} },
-  { id: "viewer", label: "Leitura", modules: { aaa: "read", servers: "read", commands: "read", audit: "read" } },
-  { id: "operator", label: "Operador", modules: { aaa: "read", servers: "write", commands: "write", audit: "read" } },
-  { id: "admin", label: "Administrador do cliente", modules: { aaa: "write", servers: "write", commands: "write", audit: "read" } },
-];
 
 export function formatDate(iso: string | null): string {
   if (!iso) return "—";

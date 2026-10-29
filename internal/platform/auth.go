@@ -32,16 +32,37 @@ const (
 type Session struct {
 	TokenHash   string
 	UserID      string // id da pessoa
-	Email       string // e-mail de login no painel
+	Email       string // login no painel (usuario@dominio)
 	Name        string
-	IsAdmin     bool
+	IsAdmin     bool // Admin global
 	MFAVerified bool
 	TOTPEnabled bool
+	Subject     *Subject
+}
+
+// can avalia uma função para quem está logado ("" = escopo da plataforma).
+func (s *Session) can(fn, customerID string) bool { return s.Subject.Can(fn, customerID).Allowed }
+
+// canSomewhere informa se a função vale na plataforma ou em algum cliente visível.
+func (s *Session) canSomewhere(fn string, customerIDs []string) bool {
+	if s.can(fn, "") {
+		return true
+	}
+	for _, c := range customerIDs {
+		if s.can(fn, c) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Session) actor(r *http.Request) Actor {
 	ip, _ := r.Context().Value(ipKey{}).(string)
-	return Actor{UserID: s.UserID, Label: s.Email, IsAdmin: s.IsAdmin, IP: ip}
+	global := false
+	if s.Subject != nil {
+		global = s.Subject.Global()
+	}
+	return Actor{UserID: s.UserID, Label: s.Email, IsAdmin: s.IsAdmin, Global: global, IP: ip}
 }
 
 type sessionKey struct{}
@@ -87,13 +108,13 @@ func (s *Server) loadSession(r *http.Request) (*Session, error) {
 	var expires, lastSeen time.Time
 	var active bool
 	err = s.DB.Pool.QueryRow(r.Context(), `
-		SELECT s.token_hash, s.person_id::text, a.login_email, p.name, a.is_admin, s.mfa_verified, a.totp_enabled,
+		SELECT s.token_hash, s.person_id::text, a.login, p.name, s.mfa_verified, a.totp_enabled,
 		       s.expires_at, s.last_seen_at, a.active AND p.active
 		FROM sessions s
 		JOIN panel_accounts a ON a.person_id = s.person_id
 		JOIN people p ON p.id = s.person_id
 		WHERE s.token_hash = $1`, th).
-		Scan(&sess.TokenHash, &sess.UserID, &sess.Email, &sess.Name, &sess.IsAdmin, &sess.MFAVerified, &sess.TOTPEnabled, &expires, &lastSeen, &active)
+		Scan(&sess.TokenHash, &sess.UserID, &sess.Email, &sess.Name, &sess.MFAVerified, &sess.TOTPEnabled, &expires, &lastSeen, &active)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -104,6 +125,16 @@ func (s *Server) loadSession(r *http.Request) (*Session, error) {
 		_, _ = s.DB.Pool.Exec(r.Context(), `DELETE FROM sessions WHERE token_hash = $1`, th)
 		return nil, nil
 	}
+	tx, err := s.DB.Pool.Begin(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	sess.Subject, err = loadSubject(r.Context(), tx, sess.UserID)
+	_ = tx.Rollback(r.Context())
+	if err != nil {
+		return nil, err
+	}
+	sess.IsAdmin = sess.Subject.FullAdmin()
 	if now.Sub(lastSeen) > time.Minute {
 		_, _ = s.DB.Pool.Exec(r.Context(), `UPDATE sessions SET last_seen_at = $2 WHERE token_hash = $1`, th, now)
 	}
@@ -131,11 +162,11 @@ func (s *Server) authed(h http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// admin exige sessão completa de administrador da plataforma.
-func (s *Server) admin(h http.HandlerFunc) http.HandlerFunc {
+// platformFn exige a função no escopo da plataforma.
+func (s *Server) platformFn(fn string, h http.HandlerFunc) http.HandlerFunc {
 	return s.authed(func(w http.ResponseWriter, r *http.Request) {
-		if !sessionFrom(r).IsAdmin {
-			writeError(w, http.StatusForbidden, "Apenas administradores.")
+		if !sessionFrom(r).can(fn, "") {
+			s.serverError(w, r, forbidden(fn))
 			return
 		}
 		h(w, r)
@@ -160,7 +191,7 @@ func (s *Server) pending(h http.HandlerFunc) http.HandlerFunc {
 }
 
 type loginRequest struct {
-	Email    string `json:"email"`
+	Login    string `json:"login"` // usuario@dominio
 	Password string `json:"password"`
 }
 
@@ -177,7 +208,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	email := strings.ToLower(strings.TrimSpace(req.Email))
+	email := strings.ToLower(strings.TrimSpace(req.Login))
 	ip := s.clientIP(r)
 	key := email + "|" + ip
 	if s.limiter.blocked(key, s.now()) {
@@ -190,7 +221,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var sealed *string
 	err := s.DB.Pool.QueryRow(r.Context(), `
 		SELECT a.person_id::text, a.password_hash, a.active AND p.active, a.totp_enabled, a.totp_secret
-		FROM panel_accounts a JOIN people p ON p.id = a.person_id WHERE lower(a.login_email) = $1`, email).
+		FROM panel_accounts a JOIN people p ON p.id = a.person_id WHERE lower(a.login) = $1`, email).
 		Scan(&userID, &hash, &active, &totpEnabled, &sealed)
 	if errors.Is(err, pgx.ErrNoRows) {
 		passhash.VerifyDummy(req.Password)
@@ -421,39 +452,34 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// MeCustomer são as permissões da pessoa num cliente.
+// MeCustomer são as funções da pessoa num cliente.
 type MeCustomer struct {
-	CustomerID string            `json:"customer_id"`
-	Code       string            `json:"code"`
-	Name       string            `json:"name"`
-	Color      string            `json:"color"`
-	Modules    map[string]string `json:"modules"` // módulo → read | write
+	CustomerID string   `json:"customer_id"`
+	Code       string   `json:"code"`
+	Name       string   `json:"name"`
+	Color      string   `json:"color"`
+	Domain     string   `json:"domain"`
+	Functions  []string `json:"functions"`
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	sess := sessionFrom(r)
-	byCustomer := map[string]*MeCustomer{}
-	order := []string{}
+	customers := []MeCustomer{}
 	err := s.DB.WithActor(r.Context(), sess.actor(r), func(tx pgx.Tx) error {
-		rows, err := tx.Query(r.Context(), `
-			SELECT c.id::text, c.code, c.name, c.color, p.module, p.level FROM panel_permissions p
-			JOIN customers c ON c.id = p.customer_id WHERE p.person_id = $1 ORDER BY c.code, p.module`, sess.UserID)
+		rows, err := tx.Query(r.Context(), `SELECT id::text, code, name, color, domain FROM customers ORDER BY code`)
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var id, code, name, color, mod, lvl string
-			if err := rows.Scan(&id, &code, &name, &color, &mod, &lvl); err != nil {
+			var m MeCustomer
+			if err := rows.Scan(&m.CustomerID, &m.Code, &m.Name, &m.Color, &m.Domain); err != nil {
 				return err
 			}
-			m, ok := byCustomer[id]
-			if !ok {
-				m = &MeCustomer{CustomerID: id, Code: code, Name: name, Color: color, Modules: map[string]string{}}
-				byCustomer[id] = m
-				order = append(order, id)
+			m.Functions = sess.Subject.Functions(m.CustomerID)
+			if len(m.Functions) > 0 {
+				customers = append(customers, m)
 			}
-			m.Modules[mod] = lvl
 		}
 		return rows.Err()
 	})
@@ -461,12 +487,14 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		s.serverError(w, r, err)
 		return
 	}
-	customers := []MeCustomer{}
-	for _, id := range order {
-		customers = append(customers, *byCustomer[id])
+	domain := GlobalDomain
+	if i := strings.LastIndex(sess.Email, "@"); i >= 0 {
+		domain = sess.Email[i+1:]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id": sess.UserID, "email": sess.Email, "name": sess.Name, "is_admin": sess.IsAdmin, "customers": customers,
+		"id": sess.UserID, "login": sess.Email, "name": sess.Name, "domain": domain,
+		"is_admin": sess.IsAdmin, "global": sess.Subject.Global(),
+		"platform": sess.Subject.Functions(""), "customers": customers,
 	})
 }
 

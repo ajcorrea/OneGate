@@ -9,6 +9,7 @@ import { Login } from "./pages/Login";
 import { Overview } from "./pages/Overview";
 import { Customers } from "./pages/Customers";
 import { People } from "./pages/People";
+import { Permissions } from "./pages/Permissions";
 import { Audit } from "./pages/Audit";
 
 function App() {
@@ -20,7 +21,8 @@ function App() {
       <Route element={<Layout />}>
         <Route index element={<Overview />} />
         <Route path="clientes" element={<Customers />} />
-        {me.is_admin && <Route path="pessoas" element={<People />} />}
+        <Route path="pessoas" element={<People />} />
+        <Route path="permissoes" element={<Permissions />} />
         <Route path="auditoria" element={<Audit />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

@@ -52,22 +52,37 @@ func (s *Server) Handler() http.Handler {
 
 	// Clientes
 	mux.HandleFunc("GET /api/customers", s.authed(s.handleListCustomers))
-	mux.HandleFunc("POST /api/customers", s.admin(s.handleCreateCustomer))
+	mux.HandleFunc("POST /api/customers", s.platformFn("admin.customers.edit", s.handleCreateCustomer))
 	mux.HandleFunc("GET /api/customers/{id}", s.authed(s.handleGetCustomer))
-	mux.HandleFunc("PATCH /api/customers/{id}", s.admin(s.handleUpdateCustomer))
+	mux.HandleFunc("PATCH /api/customers/{id}", s.platformFn("admin.customers.edit", s.handleUpdateCustomer))
 
-	// Pessoas: acesso ao painel e acesso aos equipamentos são independentes
-	mux.HandleFunc("GET /api/people", s.admin(s.handleListPeople))
-	mux.HandleFunc("POST /api/people", s.admin(s.handleCreatePerson))
-	mux.HandleFunc("PATCH /api/people/{id}", s.admin(s.handleUpdatePerson))
-	mux.HandleFunc("PUT /api/people/{id}/panel", s.admin(s.handlePutPanel))
-	mux.HandleFunc("DELETE /api/people/{id}/panel", s.admin(s.handleDeletePanel))
-	mux.HandleFunc("PUT /api/people/{id}/panel/permissions", s.admin(s.handleSetPermissions))
-	mux.HandleFunc("POST /api/people/{id}/panel/reset-totp", s.admin(s.handleResetPanelTOTP))
-	mux.HandleFunc("PUT /api/people/{id}/device", s.admin(s.handlePutDevice))
-	mux.HandleFunc("DELETE /api/people/{id}/device", s.admin(s.handleDeleteDevice))
-	mux.HandleFunc("POST /api/people/{id}/device/totp", s.admin(s.handleNewDeviceTOTP))
-	mux.HandleFunc("PUT /api/people/{id}/device/customers", s.admin(s.handleSetDeviceCustomers))
+	// Pessoas: acesso ao painel e acesso aos equipamentos são independentes.
+	// A permissão é conferida no escopo da pessoa (domínio global = plataforma; domínio do cliente = cliente).
+	mux.HandleFunc("GET /api/people", s.authed(s.handleListPeople))
+	mux.HandleFunc("POST /api/people", s.authed(s.handleCreatePerson))
+	mux.HandleFunc("PATCH /api/people/{id}", s.authed(s.handleUpdatePerson))
+	mux.HandleFunc("PUT /api/people/{id}/panel", s.authed(s.handlePutPanel))
+	mux.HandleFunc("DELETE /api/people/{id}/panel", s.authed(s.handleDeletePanel))
+	mux.HandleFunc("PUT /api/people/{id}/panel/overrides", s.authed(s.handlePutOverrides))
+	mux.HandleFunc("POST /api/people/{id}/panel/reset-totp", s.authed(s.handleResetPanelTOTP))
+	mux.HandleFunc("GET /api/people/{id}/effective", s.authed(s.handleEffective))
+	mux.HandleFunc("PUT /api/people/{id}/device", s.authed(s.handlePutDevice))
+	mux.HandleFunc("DELETE /api/people/{id}/device", s.authed(s.handleDeleteDevice))
+	mux.HandleFunc("POST /api/people/{id}/device/totp", s.authed(s.handleNewDeviceTOTP))
+
+	// Permissões do painel: catálogo, tipos de acesso, grupos e simulador
+	mux.HandleFunc("GET /api/permissions/catalog", s.authed(s.handleCatalog))
+	mux.HandleFunc("POST /api/permissions/simulate", s.authed(s.handleSimulate))
+	mux.HandleFunc("GET /api/access-types", s.authed(s.handleListTypes))
+	mux.HandleFunc("POST /api/access-types", s.authed(s.handleCreateType))
+	mux.HandleFunc("PATCH /api/access-types/{id}", s.authed(s.handleUpdateType))
+	mux.HandleFunc("PUT /api/access-types/{id}/grants", s.authed(s.handleSetGrants))
+	mux.HandleFunc("DELETE /api/access-types/{id}", s.authed(s.handleDeleteType))
+	mux.HandleFunc("GET /api/panel-groups", s.authed(s.handleListGroups))
+	mux.HandleFunc("POST /api/panel-groups", s.authed(s.handleCreateGroup))
+	mux.HandleFunc("PATCH /api/panel-groups/{id}", s.authed(s.handleUpdateGroup))
+	mux.HandleFunc("PUT /api/panel-groups/{id}/overrides", s.authed(s.handleGroupOverrides))
+	mux.HandleFunc("DELETE /api/panel-groups/{id}", s.authed(s.handleDeleteGroup))
 
 	// Auditoria
 	mux.HandleFunc("GET /api/audit", s.authed(s.handleListAudit))
@@ -149,6 +164,11 @@ func (s *Server) serverError(w http.ResponseWriter, r *http.Request, err error) 
 	var ve validationError
 	if errors.As(err, &ve) {
 		writeError(w, http.StatusBadRequest, ve.Error())
+		return
+	}
+	var fe forbiddenError
+	if errors.As(err, &fe) {
+		writeError(w, http.StatusForbidden, fe.Error())
 		return
 	}
 	var ce conflictError

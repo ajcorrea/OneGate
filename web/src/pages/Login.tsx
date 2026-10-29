@@ -9,7 +9,7 @@ type Step = "password" | "totp" | "setup" | "recovery" | "codes";
 export function Login() {
   const { refresh } = useAuth();
   const [step, setStep] = useState<Step>("password");
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -42,7 +42,7 @@ export function Login() {
   const submitPassword = (e: FormEvent) => {
     e.preventDefault();
     void run(async () => {
-      const r = await api.post<{ next: string; otpauth_uri?: string; secret?: string }>("/api/auth/login", { email, password });
+      const r = await api.post<{ next: string; otpauth_uri?: string; secret?: string }>("/api/auth/login", { login, password });
       setPassword("");
       setCode("");
       if (r.next === "totp_setup" && r.otpauth_uri && r.secret) {
@@ -81,8 +81,8 @@ export function Login() {
           <form onSubmit={submitPassword} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <h1 style={{ fontSize: 22 }}>Entrar</h1>
             <label className="field">
-              <span>E-mail</span>
-              <input className="input" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              <span>Login</span>
+              <input className="input" autoComplete="username" required placeholder="usuario@dominio" value={login} onChange={(e) => setLogin(e.target.value.trim())} />
             </label>
             <label className="field">
               <span>Senha</span>

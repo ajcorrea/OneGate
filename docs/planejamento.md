@@ -147,6 +147,14 @@ gravação de sessão/bastion, 802.1X/NAC, descoberta, PKI, relatórios, HA da n
   e o usuário daquele domínio só existe naquele cliente. Na tela de regras AAA, Quem, Onde, De onde e
   O que viram busca com sugestão a partir de 3 letras (preparado para milhares de usuários); IP/CIDR
   digitado vira faixa avulsa. Quando e MFA continuam como botões.
+- **Implementado (29/10) no painel:** domínio por cliente (`usuario@dominio` nos dois acessos; o domínio
+  não muda depois de criado), tipos de acesso (Admin global, Operador global, Admin do cliente, Operador
+  do cliente e personalizados), grupos globais ou de cliente com tipo base, exceções por grupo e por
+  usuário, clientes atribuídos para tipos por cliente, permissão efetiva com a origem da decisão e
+  simulador. Ordem: escopo → usuário → grupos (negar vence) → tipos; o Admin global não é restringido.
+  Proteções: só o Admin global cria tipos e atribui tipos globais; ninguém altera as próprias permissões
+  nem concede uma função que não tem; pessoa de domínio de cliente só recebe tipos/grupos do próprio
+  cliente. Pendente: aplicar as funções AAA/servidores/comandos quando essas telas existirem.
 - **Campo vazio = sem acesso (decisão de 29/10):** uma regra só vale com todos os campos preenchidos
   (em "Negar", O que e MFA não se aplicam). Para liberar tudo, usa-se um objeto pré-definido explícito:
   Todos os usuários / Ninguém, Todos os equipamentos / Nenhum, Qualquer IP / Nenhum IP, Nenhum comando,
