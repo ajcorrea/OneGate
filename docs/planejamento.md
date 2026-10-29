@@ -66,12 +66,16 @@ Fora do escopo: autenticação de assinantes (PPPoE/hotspot). Isso continua no R
 | `internal/policy` | Motor de política: usuários, grupos, regras, autorização de comandos, MFA |
 | `internal/totp` | TOTP (RFC 6238) com proteção contra reuso |
 | `internal/tacacs` | Servidor TACACS+ ligado ao motor de política |
-| `internal/platform` | Domínio da plataforma: clientes, equipe, sessões, auditoria |
-| `migrations` | Migrações SQL do PostgreSQL |
+| `internal/platform` | API da plataforma: clientes, equipe, sessões, auditoria |
+| `internal/platform/migrations` | Migrações SQL do PostgreSQL (embutidas no binário) |
+| `internal/secretbox` | Cifragem AES-256-GCM de segredos guardados no banco (sementes TOTP) |
+| `internal/edgelog` | Eventos de AAA do Edge (JSONL, fila local para a nuvem) |
 | `web` | Painel (React + Vite + TypeScript) |
 | `deploy` | Docker Compose para desenvolvimento |
 
 ## 5. Cronograma do MVP (15 dias)
+
+Situação: dias 1 e 2 concluídos (ver seção 8).
 
 | Dia | Entrega |
 |---|---|
@@ -110,3 +114,21 @@ gravação de sessão/bastion, 802.1X/NAC, descoberta, PKI, relatórios, HA da n
 - A nuvem aceita agentes/Edges da versão atual e da anterior.
 - Atualização dos Edges escalonada (ON TELECOM → alguns clientes → todos). Os 2 Edges de um cliente
   nunca atualizam ao mesmo tempo.
+
+## 8. Andamento
+
+### Dias 1 e 2 (concluídos)
+
+- **Edge, TACACS+:** login ASCII/PAP, TOTP por segundo prompt ou senha+código, janela de confiança,
+  anti-reuso de código, bloqueio por excesso de falhas, autorização de sessão e de comando,
+  accounting com senhas mascaradas, chave própria por equipamento, recarga da política sem
+  reiniciar (SIGHUP). Ferramenta `test-login` para o laboratório.
+  **Pendente:** validar com Huawei/Cisco/Datacom reais (`deploy/edge/README.md`).
+- **Plataforma:** clientes com badge, equipe, papéis por cliente, login com senha + TOTP obrigatório
+  (cadastro por QR Code no primeiro acesso, códigos de recuperação), sessões, auditoria somente
+  acréscimo, isolamento por cliente no banco (RLS com FORCE).
+- **Painel:** login/cadastro do TOTP, visão geral, clientes, equipe e permissões, auditoria,
+  temas claro e escuro.
+
+Decisão tomada na implementação: o painel e os equipamentos usam **o mesmo usuário e o mesmo TOTP**
+de cada técnico (um cadastro só). A sincronização da senha e do TOTP para os Edges entra no dia 7.

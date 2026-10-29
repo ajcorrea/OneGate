@@ -10,7 +10,7 @@ O planejamento completo, com decisões, arquitetura e cronograma, está em [`doc
 
 | Binário | Função |
 |---|---|
-| `onegate-api` | API da plataforma (nuvem) |
+| `onegate-api` | API da plataforma (nuvem) e painel web |
 | `onegate-edge` | Edge instalado na rede do cliente: TACACS+ (e RADIUS) com política local |
 | `onegate-agent` | Agente dos servidores Linux (em construção) |
 
@@ -24,12 +24,16 @@ Requisitos: Go 1.24+, Node 22+, Docker (ou PostgreSQL 16 local).
 # Banco de desenvolvimento
 docker compose -f deploy/docker-compose.dev.yml up -d
 
-# API (aplica as migrações ao iniciar)
+# Variáveis (veja .env.example)
 export ONEGATE_DATABASE_URL="postgres://onegate:onegate@localhost:5432/onegate?sslmode=disable"
-go run ./cmd/onegate-api
+export ONEGATE_SECRET_KEY="$(openssl rand -base64 32)"   # guarde: sem ela os TOTP não decifram
+export ONEGATE_INSECURE_COOKIES=1                         # só em desenvolvimento sem HTTPS
 
-# Cria o primeiro administrador (mostra o segredo TOTP para cadastrar no app autenticador)
-go run ./cmd/onegate-api bootstrap-admin --email voce@exemplo.com --name "Seu Nome"
+# Primeiro administrador (o TOTP é cadastrado por QR Code no primeiro login)
+go run ./cmd/onegate-api bootstrap-admin --email voce@ontelecom.io --name "Seu Nome" --username seu.usuario
+
+# API (aplica as migrações ao iniciar)
+go run ./cmd/onegate-api
 
 # Painel web
 cd web && npm install && npm run dev
@@ -50,6 +54,16 @@ Configure o equipamento para usar o IP do Edge como servidor TACACS+, com a chav
 
 ```bash
 go test ./...
+# Integração com PostgreSQL (apaga e recria o esquema do banco de teste):
+ONEGATE_TEST_DATABASE_URL="postgres://onegate:onegate@localhost:5432/onegate_test?sslmode=disable" go test ./internal/platform/
+```
+
+### Produção (provisório)
+
+```bash
+cd web && npm ci && npm run build && cd ..
+go build -o onegate-api ./cmd/onegate-api
+ONEGATE_WEB_DIR=./web/dist ./onegate-api      # API + painel na mesma porta, atrás de HTTPS
 ```
 
 ---

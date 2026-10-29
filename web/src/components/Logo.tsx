@@ -1,0 +1,20 @@
+// Símbolo ON TELECOM recriado em vetor: muda de cor com o tema.
+export function LogoMark({ size = 44 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" role="img" aria-label="Símbolo ON TELECOM">
+      <polygon points="50.0,8.0 86.4,29.0 86.4,71.0 50.0,92.0 13.6,71.0 13.6,29.0" fill="none" stroke="currentColor" strokeWidth={8} /><polygon points="50.0,38.5 60.0,44.2 60.0,55.8 50.0,61.5 40.0,55.8 40.0,44.2" fill="none" stroke="currentColor" strokeWidth={6} /><circle cx="50.0" cy="22.0" r="5.6" fill="none" stroke="#3FC1F4" strokeWidth="4" /><path d="M50.0 27.6L50.0 31.5" stroke="#3FC1F4" strokeWidth="4.5" strokeLinecap="round" /><circle cx="74.2" cy="36.0" r="5.6" fill="none" stroke="#3FC1F4" strokeWidth="4" /><path d="M69.4 38.8L66.0 40.8" stroke="#3FC1F4" strokeWidth="4.5" strokeLinecap="round" /><circle cx="74.2" cy="64.0" r="5.6" fill="none" stroke="#3FC1F4" strokeWidth="4" /><path d="M69.4 61.2L66.0 59.2" stroke="#3FC1F4" strokeWidth="4.5" strokeLinecap="round" /><circle cx="50.0" cy="78.0" r="5.6" fill="none" stroke="#3FC1F4" strokeWidth="4" /><path d="M50.0 72.4L50.0 68.5" stroke="#3FC1F4" strokeWidth="4.5" strokeLinecap="round" /><circle cx="25.8" cy="64.0" r="5.6" fill="none" stroke="#3FC1F4" strokeWidth="4" /><path d="M30.6 61.2L34.0 59.2" stroke="#3FC1F4" strokeWidth="4.5" strokeLinecap="round" /><circle cx="25.8" cy="36.0" r="5.6" fill="none" stroke="#3FC1F4" strokeWidth="4" /><path d="M30.6 38.8L34.0 40.8" stroke="#3FC1F4" strokeWidth="4.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function Brand() {
+  return (
+    <div className="brand">
+      <LogoMark />
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        <span className="brand-name">ONE GATE</span>
+        <span className="brand-by">by on telecom</span>
+      </div>
+    </div>
+  );
+}
